@@ -84,6 +84,7 @@ errflags errflags_never = 0;	/* Error flags to unconditionally suppress */
 
 FILE *ofile = NULL;
 enum optimization optimizing = OPTIM_DEFAULT;
+static bool optimizing_set = false;     /* did the user pass an explicit -O? */
 static int cmd_sb = 16;    /* by default */
 
 iflag_t cpu, cmd_cpu;
@@ -640,6 +641,16 @@ int main(int argc, char **argv)
         ppopt |= PP_TASM;
         nasm_ctype_tasm_mode();
     }
+
+    /*
+     * MASM mode: match ML's code generation. ML optimizes immediate sizes
+     * (imm8 sign-extension) but does NOT shrink forward jumps to short --
+     * exactly NASM's -O1. Default to it unless the user asked for an explicit
+     * -O level (NASM's own default, -Ox, would over-shorten forward branches).
+     */
+    if (masm_mode && !optimizing_set)
+        optimizing = OPTIM_LEVEL_1;
+
     preproc_init(include_path);
 
     parse_cmdline(argc, argv, 2);
@@ -1106,6 +1117,8 @@ static bool process_arg(char *p, char *q, int pass)
         case 'O':       /* Optimization level */
             if (pass == 1) {
                 int opt;
+
+                optimizing_set = true;
 
                 if (!*param) {
                     /* Naked -O == -Ox */
