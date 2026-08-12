@@ -62,6 +62,7 @@ real ML 6.11:
 | `hll_ifb` | `IFB`/`IFNB`, `IFIDN`/`IFDIF` text conditionals, optional macro params (`= ML`) |
 | `hll_struct` | `STRUCT`/`ENDS` (incl. `DUP` arrays, nested), `[reg].STRUCT.member`, `SIZEOF STRUCT` (`= ML`) |
 | `hll_struct_inst` | static instances `label S <i,...>` + instance-member access `label.m` (load/store/word/rmw = ML) |
+| `hll_union` | `UNION` types — members overlap at offset 0, `SIZEOF` = largest member (`= ML`) |
 | `hll_expr` | expression operators `TYPE`/`SIZEOF` (struct + primitive), `LOW`/`HIGH`/`LOWWORD`/`HIGHWORD`, radix `1010b`/`17q` (`= ML`) |
 
 Each `.asm` header explains the behaviour and annotates the expected bytes

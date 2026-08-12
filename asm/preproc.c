@@ -1592,6 +1592,8 @@ struct masm_smember {
 };
 struct masm_sdef {
     char *name;
+    bool is_union;              /* UNION: all members at offset 0, size = max */
+    int usize;                  /* running max member size, for a union */
     struct masm_smember *head, *tail;
     struct masm_sdef *next;
 };
@@ -1620,6 +1622,21 @@ static const char *masm_type_to_dd(const char *t)
     if (!nasm_stricmp(t, "qword") || !nasm_stricmp(t, "dq")) return "dq";
     if (!nasm_stricmp(t, "tbyte") || !nasm_stricmp(t, "dt")) return "dt";
     return NULL;
+}
+
+/* MASM primitive type -> element size in bytes (0 if not a primitive). */
+static int masm_type_bytes(const char *t)
+{
+    if (!nasm_stricmp(t, "byte")  || !nasm_stricmp(t, "db") ||
+        !nasm_stricmp(t, "sbyte")) return 1;
+    if (!nasm_stricmp(t, "word")  || !nasm_stricmp(t, "dw") ||
+        !nasm_stricmp(t, "sword")) return 2;
+    if (!nasm_stricmp(t, "dword") || !nasm_stricmp(t, "dd") ||
+        !nasm_stricmp(t, "sdword")) return 4;
+    if (!nasm_stricmp(t, "fword") || !nasm_stricmp(t, "df")) return 6;
+    if (!nasm_stricmp(t, "qword") || !nasm_stricmp(t, "dq")) return 8;
+    if (!nasm_stricmp(t, "tbyte") || !nasm_stricmp(t, "dt")) return 10;
+    return 0;
 }
 
 /* MASM member type -> NASM reservation directive (for a struc field). */
@@ -1770,6 +1787,12 @@ static char *masm_pp_xform(char *line)
         const char *mp = p;
         size_t mtl = masm_word(&mp, mtype, sizeof mtype);
         if (mtl && !nasm_stricmp(mtype, "ends")) {
+            bool uni = masm_sdef_cur && masm_sdef_cur->is_union;
+            if (uni) {                          /* emit the union size define */
+                snprintf(tmp, sizeof tmp, "%%define %s_size %d",
+                         masm_sdef_cur->name, masm_sdef_cur->usize);
+                masm_ppq_add(nasm_strdup(tmp));
+            }
             masm_in_struct = false;
             if (masm_sdef_cur) {                /* commit the definition */
                 masm_sdef_cur->next = masm_sdefs;
@@ -1777,12 +1800,14 @@ static char *masm_pp_xform(char *line)
                 masm_sdef_cur = NULL;
             }
             nasm_free(line);
-            masm_ppq_add(nasm_strdup("endstruc"));
+            if (!uni)
+                masm_ppq_add(nasm_strdup("endstruc"));
             return masm_ppq_get();
         }
         if (mtl) {
             const char *res = masm_type_to_res(mtype);
             int count = 1;
+            int esz = masm_type_bytes(mtype);
             const char *rp = mp;
             while (*rp == ' ' || *rp == '\t')
                 rp++;
@@ -1807,8 +1832,14 @@ static char *masm_pp_xform(char *line)
                 else
                     masm_sdef_cur->head = mb;
                 masm_sdef_cur->tail = mb;
+                if (masm_sdef_cur->is_union && esz * count > masm_sdef_cur->usize)
+                    masm_sdef_cur->usize = esz * count;
             }
-            if (res)
+            if (masm_sdef_cur && masm_sdef_cur->is_union) {
+                /* union member: fixed at offset 0 */
+                snprintf(tmp, sizeof tmp, "%%define %s.%s 0",
+                         masm_sdef_cur->name, w1);
+            } else if (res)
                 snprintf(tmp, sizeof tmp, ".%s: %s %d", w1, res, count);
             else        /* nested struct type: reserve <type>_size bytes */
                 snprintf(tmp, sizeof tmp, ".%s: resb %s_size", w1, mtype);
@@ -2067,15 +2098,24 @@ static char *masm_pp_xform(char *line)
 
     l2 = masm_word(&p, w2, sizeof w2);
 
-    if (l2 && (!nasm_stricmp(w2, "struct") || !nasm_stricmp(w2, "struc"))) {
-        /* NAME STRUCT  ->  struc NAME; members collected until NAME ENDS. */
+    if (l2 && (!nasm_stricmp(w2, "struct") || !nasm_stricmp(w2, "struc") ||
+               !nasm_stricmp(w2, "union"))) {
+        /*
+         * NAME STRUCT  ->  struc NAME (members collected until NAME ENDS).
+         * NAME UNION   ->  no struc; every member sits at offset 0 and the size
+         *                  is the largest member (emitted as NAME.m/NAME_size
+         *                  defines at ENDS).
+         */
         struct masm_sdef *sd;
         masm_in_struct = true;
         nasm_new(sd);
         sd->name = nasm_strdup(w1);
+        sd->is_union = !nasm_stricmp(w2, "union");
         masm_sdef_cur = sd;
-        snprintf(tmp, sizeof tmp, "struc %s", w1);
         nasm_free(line);
+        if (sd->is_union)
+            return nasm_strdup("");             /* union: nothing emitted yet */
+        snprintf(tmp, sizeof tmp, "struc %s", w1);
         masm_ppq_add(nasm_strdup(tmp));
         return masm_ppq_get();
     }
