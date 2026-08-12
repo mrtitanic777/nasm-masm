@@ -13,7 +13,7 @@ _TEXT   segment dword public use32 'CODE'
         and     ax, 3fh                     ; 66 25 3f 00
         lea     edx, [ecx*2]                ; 8d 14 4d 00 00 00 00
         mov     word ptr [esi+4], cs        ; 66 8c 4e 04
-        stosd   dword ptr es:[edi], eax     ; ab
+        stosd                               ; ab  (implicit eax -> es:[edi])
         ret                                 ; c3
 _TEXT   ends
         end

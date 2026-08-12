@@ -58,6 +58,29 @@ python run.py --corpus /path/to/win95/src/asm/core
 Reported: fragments, assemble errors, byte-exact count, and total byte match.
 As of the current tree: **539/539 fragments, 100.00% byte-exact.**
 
+## Differential oracle vs real ML.EXE
+
+For the authoring dialect (Track B) there is no byte ground truth, so
+`ml_oracle.py` drives a real Microsoft `ML.EXE` and diffs its object code
+against `nasm --masm`, per file. ML 6.11c/6.13/6.14 are Win32 and run natively
+(no DOSBox):
+
+```sh
+python ml_oracle.py --ml /path/to/masm611c/ML.EXE fixtures/objseg.asm
+python ml_oracle.py --ml /path/to/ML.EXE --corpus /path/to/win95/src/asm/core
+```
+
+Documented findings from wiring this up:
+- On the Win95 VxD corpus, **`nasm --masm` matches the shipped bytes more
+  faithfully than real ML does** — ML 6.0 and 6.11c both diverge on a few SIB
+  base/index orderings of two-register addressing (they encode `[eax+esi]` with
+  base=esi; the shipped code, and nasm, use base=eax). Functionally identical;
+  the corpus ground truth is authoritative.
+- **`nasm --masm` is deliberately more lenient than ML** on the machine-
+  generated corpus dialect — e.g. real ML rejects `stosd dword ptr es:[edi],eax`
+  ("too many operands"), which nasm accepts so it can assemble the disassembly
+  corpus that ML itself cannot.
+
 ## Adding a fixture
 
 1. Write `fixtures/<name>.asm` (clean MASM; annotate the expected bytes in the
