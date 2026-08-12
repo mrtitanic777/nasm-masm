@@ -1581,6 +1581,18 @@ static size_t masm_word(const char **pp, char *buf, size_t bufsz)
 
 static int masm_type_bytes(const char *t);   /* defined below */
 
+/* A MASM conditional-assembly keyword (so it is never a STRUC member line). */
+static bool masm_is_cond(const char *w)
+{
+    return !nasm_stricmp(w, "if")   || !nasm_stricmp(w, "ife")    ||
+           !nasm_stricmp(w, "ifdef")|| !nasm_stricmp(w, "ifndef") ||
+           !nasm_stricmp(w, "ifb")  || !nasm_stricmp(w, "ifnb")   ||
+           !nasm_stricmp(w, "ifidn")|| !nasm_stricmp(w, "ifdif")  ||
+           !nasm_stricmp(w, "else") || !nasm_stricmp(w, "elseif") ||
+           !nasm_stricmp(w, "endif")|| !nasm_stricmp(w, "if1")    ||
+           !nasm_stricmp(w, "if2");
+}
+
 /*
  * If an expression begins with a `<size> PTR' cast (BYTE/WORD/DWORD/... PTR),
  * return a pointer past it; otherwise return the input unchanged.  MASM uses
@@ -2144,7 +2156,7 @@ static char *masm_pp_xform(char *line)
      * becomes a NASM struc field `.member: resX count' (giving STRUCT.member
      * offsets and STRUCT_size for free).  `NAME ENDS' closes it.
      */
-    if (masm_in_struct) {
+    if (masm_in_struct && !masm_is_cond(w1)) {
         char mtype[64];
         const char *mp = p;
         size_t mtl = masm_word(&mp, mtype, sizeof mtype);
@@ -2205,8 +2217,18 @@ static char *masm_pp_xform(char *line)
                 snprintf(tmp, sizeof tmp, ".%s: %s %d", w1, res, count);
             else        /* nested struct type: reserve <type>_size bytes */
                 snprintf(tmp, sizeof tmp, ".%s: resb %s_size", w1, mtype);
-            nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
+            /*
+             * MASM makes each field name a bare offset symbol too (`la_handle'
+             * == its offset in the struct), used in `size = la_handle' idioms.
+             * Alias it to the NASM struc offset symbol STRUCT.field.
+             */
+            if (masm_sdef_cur && !masm_sdef_cur->is_union) {
+                snprintf(tmp, sizeof tmp, "%%define %s %s.%s",
+                         w1, masm_sdef_cur->name, w1);
+                masm_ppq_add(nasm_strdup(tmp));
+            }
+            nasm_free(line);
             return masm_ppq_get();
         }
         return line;
@@ -2518,8 +2540,11 @@ static char *masm_pp_xform(char *line)
             pe++;
         if (*pe == '=' && pe[1] != '=') {
             char ex[512];
+            char *ex2;
             masm_xlat_ops(ex, sizeof ex, masm_skip_typeptr(pe + 1));
-            snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, ex);
+            ex2 = masm_rewrite_line(nasm_strdup(ex));  /* SIZE/SIZEOF/... */
+            snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, ex2);
+            nasm_free(ex2);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
