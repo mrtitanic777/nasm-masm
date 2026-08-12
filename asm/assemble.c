@@ -2971,6 +2971,48 @@ masm_regdir_pref(const struct itemplate_list *templist,
     return best;
 }
 
+/*
+ * MASM encoding preference (--masm): for a 16-bit `<alu> AX, imm' ML emits the
+ * accumulator-special opcode with a 16-bit immediate (AND AX,imm -> 25 iw, etc).
+ * That is the same length as NASM's sign-extended-imm8 group form (83 /r ib) --
+ * and ML picks the accumulator on that tie. (For 8-bit the accumulator form is
+ * already shorter and for 32-bit the imm8 group form is shorter, so both
+ * assemblers agree; only the 16-bit accumulator ties.) When find_match settled
+ * on the group r/m,imm form for a 16-bit accumulator destination, switch to the
+ * accumulator template. matches() confirms the operand really is AX.
+ */
+static const struct itemplate *
+masm_accum_imm_pref(const struct itemplate_list *templist,
+                    const struct itemplate *best, const insn *ins, int *besti)
+{
+    const struct itemplate *t;
+    int i;
+
+    if (ins->operands != 2)
+        return best;
+    if (!(ins->oprs[1].type & IMMEDIATE))
+        return best;
+    /* best is the group r/m,imm form (opd[0] the r/m slot), 16-bit only */
+    if (best->opd[0] & REGISTER)
+        return best;
+    if (!(best->opd[0] & BITS16))
+        return best;
+
+    t = templist->temp;
+    for (i = 0; i < templist->ntemp; i++, t++) {
+        if (t == best || t->operands != 2)
+            continue;
+        /* accumulator form: opd[0] is a specific register, not an r/m slot */
+        if (!(t->opd[0] & REGISTER))
+            continue;
+        if (matches(t, ins) == MOK_GOOD) {
+            *besti = i;
+            return t;
+        }
+    }
+    return best;
+}
+
 static enum match_result find_match(insn *instruction)
 {
     const int bits = instruction->bits;
@@ -3011,8 +3053,10 @@ static enum match_result find_match(insn *instruction)
     if (merr >= MOK_FIRST) {
         /* If this was a fuzzy match it is confirmed now */
         merr = MOK_GOOD;
-        if (masm_mode)
+        if (masm_mode) {
             best = masm_regdir_pref(templist, best, instruction, &besti);
+            best = masm_accum_imm_pref(templist, best, instruction, &besti);
+        }
         instruction->itemp = best;
         instruction->itempindex = besti;
     }
