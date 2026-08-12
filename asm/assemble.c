@@ -2929,6 +2929,48 @@ static uint32_t op_evexflags(const operand * o, uint32_t mask)
     return evexflags(o->decoflags, mask);
 }
 
+/*
+ * MASM encoding preference (--masm): for a two-register ALU/MOV instruction
+ * MASM emits the "reg, r/m" (direction bit = 1) form -- the first operand goes
+ * in the ModRM reg field -- whereas NASM defaults to the "r/m, reg" form. Both
+ * encode the same operation, so this only changes the emitted bytes, never the
+ * semantics; it is what makes reg,reg bodies byte-identical to ML output.
+ *
+ * When find_match settled on the r/m,reg orientation for an all-register
+ * instruction, switch to the reg,r/m counterpart template if the opcode has one
+ * that also matches. The r/m operand slot is the template operand lacking the
+ * REGISTER bit (RM_GPR); the pure-register slot (REG_GPR) has it.
+ */
+static const struct itemplate *
+masm_regdir_pref(const struct itemplate_list *templist,
+                 const struct itemplate *best, const insn *ins, int *besti)
+{
+    const struct itemplate *t;
+    int i;
+
+    if (ins->operands != 2)
+        return best;
+    if (!(ins->oprs[0].type & REGISTER) || !(ins->oprs[1].type & REGISTER))
+        return best;
+    /* best is r/m,reg?  opd[0] is the r/m slot (no REGISTER), opd[1] the reg. */
+    if ((best->opd[0] & REGISTER) || !(best->opd[1] & REGISTER))
+        return best;
+
+    t = templist->temp;
+    for (i = 0; i < templist->ntemp; i++, t++) {
+        if (t == best || t->operands != 2)
+            continue;
+        /* counterpart is reg,r/m: opd[0] the reg slot, opd[1] the r/m slot */
+        if (!(t->opd[0] & REGISTER) || (t->opd[1] & REGISTER))
+            continue;
+        if (matches(t, ins) == MOK_GOOD) {
+            *besti = i;
+            return t;
+        }
+    }
+    return best;
+}
+
 static enum match_result find_match(insn *instruction)
 {
     const int bits = instruction->bits;
@@ -2969,6 +3011,8 @@ static enum match_result find_match(insn *instruction)
     if (merr >= MOK_FIRST) {
         /* If this was a fuzzy match it is confirmed now */
         merr = MOK_GOOD;
+        if (masm_mode)
+            best = masm_regdir_pref(templist, best, instruction, &besti);
         instruction->itemp = best;
         instruction->itempindex = besti;
     }
