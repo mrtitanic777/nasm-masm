@@ -169,6 +169,8 @@ USE: masm
 
 %assign __?MASM_FRAME?__ 0      ; is an EBP frame active (affects RET)
 %assign __?MASM_RETBYTES?__ 0   ; bytes for a stack-cleaning RET
+%assign __?MASM_LOCALOFF?__ 0   ; running local-variable offset from EBP
+%assign __?MASM_USESN?__ 0      ; count of USES registers to restore
 
 ;; Define one parameter "name:type" as a DWORD [ebp+off] equate.
 %imacro __?masm_defparam?__ 2.nolist
@@ -193,8 +195,68 @@ USE: masm
   %xdefine %[%%nt] dword [ebp+%2]
 %endmacro
 
+;; Record the registers of a `USES r1 r2 ...' clause (which arrives as one
+;; space-joined argument) into __?MASM_USESREG1..N so the prologue can push them
+;; after the frame and the epilogue pop them in reverse.
+%imacro __?masm_uses_record?__ 1.nolist
+  %defstr %%s %1
+  %strlen %%n %%s
+  %assign %%i 1
+  %assign %%ts 0
+  %assign %%first 1                     ; the first token is the word USES
+  %rep %%n+1
+    %if %%i > %%n
+      %assign %%sp 1
+    %else
+      %substr %%ch %%s %%i
+      %ifidn %%ch, ' '
+        %assign %%sp 1
+      %else
+        %assign %%sp 0
+      %endif
+    %endif
+    %if %%sp
+      %if %%ts
+        %if %%first
+          %assign %%first 0
+        %else
+          %substr %%tok %%s %%ts,%%i-%%ts
+          %deftok %%r %%tok
+          %assign __?MASM_USESN?__ __?MASM_USESN?__+1
+          %xdefine __?MASM_USESREG%[__?MASM_USESN?__] %[%%r]
+        %endif
+        %assign %%ts 0
+      %endif
+    %else
+      %if %%ts == 0
+        %assign %%ts %%i
+      %endif
+    %endif
+    %assign %%i %%i+1
+  %endrep
+%endmacro
+
+;; Does argument %1 contain a space?  The USES clause is the only PROC argument
+;; that does (params are `name:type', langtypes are single words).
+%imacro __?masm_argspace?__ 1.nolist
+  %defstr %%s %1
+  %strlen %%n %%s
+  %assign __?MASM_ARGSPACE?__ 0
+  %assign %%i 1
+  %rep %%n
+    %substr %%ch %%s %%i
+    %ifidn %%ch, ' '
+      %assign __?MASM_ARGSPACE?__ 1
+      %exitrep
+    %endif
+    %assign %%i %%i+1
+  %endrep
+%endmacro
+
 %imacro proc 0-*.nolist
   %00:                                  ; define the procedure label
+  %assign __?MASM_LOCALOFF?__ 0
+  %assign __?MASM_USESN?__ 0
   %assign %%off 8                       ; first parameter is at [ebp+8]
   %assign %%pbytes 0
   ;; default calling convention from .MODEL; an explicit PROC langtype overrides
@@ -205,7 +267,10 @@ USE: masm
     %endif
   %endif
   %rep %0
-    %ifidni %1,c
+    __?masm_argspace?__ %1
+    %if __?MASM_ARGSPACE?__
+      __?masm_uses_record?__ %1         ; the USES reglist (only arg with a space)
+    %elifidni %1,c
       %assign %%cdecl 1
     %elifidni %1,syscall
       %assign %%cdecl 1
@@ -234,6 +299,15 @@ USE: masm
   %else
     %assign __?MASM_FRAME?__ 0
   %endif
+  ;; push the USES registers after the frame; locals then sit below them
+  %if __?MASM_USESN?__
+    %assign %%k 1
+    %rep __?MASM_USESN?__
+      push __?MASM_USESREG%[%%k]
+      %assign %%k %%k+1
+    %endrep
+    %assign __?MASM_LOCALOFF?__ 4*__?MASM_USESN?__
+  %endif
   %if %%cdecl
     %assign __?MASM_RETBYTES?__ 0        ; caller cleans
   %else
@@ -247,9 +321,57 @@ USE: masm
   %assign __?MASM_RETBYTES?__ 0
 %endmacro
 
+;; LOCAL var:type [, ...] -- stack locals at [ebp-N].  Establishes the EBP frame
+;; if the PROC had no parameters, then reserves space (one `add esp,-total' per
+;; LOCAL directive, as ML emits) and binds each name to a DWORD [ebp-N] equate.
+;; (Type widths and arrays are future work: locals are treated as DWORD.)
+%imacro __?masm_deflocal?__ 1.nolist
+  %defstr %%p %1
+  %strlen %%len %%p
+  %assign %%i 1
+  %assign %%col 0
+  %rep %%len
+    %substr %%c %%p %%i
+    %ifidn %%c, ':'
+      %assign %%col %%i
+      %exitrep
+    %endif
+    %assign %%i %%i+1
+  %endrep
+  %if %%col
+    %substr %%nm %%p 1,%%col-1
+  %else
+    %defstr %%nm %1
+  %endif
+  %deftok %%nt %%nm
+  %assign __?MASM_LOCALOFF?__ __?MASM_LOCALOFF?__+4
+  %xdefine %[%%nt] dword [ebp-__?MASM_LOCALOFF?__]
+%endmacro
+
+%imacro local 1-*.nolist
+  %if __?MASM_FRAME?__ == 0
+    push ebp
+    mov ebp, esp
+    %assign __?MASM_FRAME?__ 1
+  %endif
+  %assign %%before __?MASM_LOCALOFF?__
+  %rep %0
+    __?masm_deflocal?__ %1
+    %rotate 1
+  %endrep
+  add esp, -(__?MASM_LOCALOFF?__ - %%before)
+%endmacro
+
 ;; RET emits the procedure epilogue.  Outside a frame it is a plain near RET,
 ;; so the machine-generated corpus (which never opens a PROC) is unaffected.
 %imacro ret 0-1.nolist
+  %if __?MASM_USESN?__
+    %assign %%k __?MASM_USESN?__          ; restore USES registers in reverse
+    %rep __?MASM_USESN?__
+      pop __?MASM_USESREG%[%%k]
+      %assign %%k %%k-1
+    %endrep
+  %endif
   %if __?MASM_FRAME?__
     leave
   %endif
