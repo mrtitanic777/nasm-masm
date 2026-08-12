@@ -1603,6 +1603,7 @@ struct masm_sdef {
 static struct masm_sdef *masm_sdefs;      /* all completed struct definitions */
 static struct masm_sdef *masm_sdef_cur;   /* the one currently being defined  */
 static bool masm_in_struct;
+static char masm_comment_delim;           /* inside a COMMENT block: its delimiter */
 
 static struct masm_sdef *masm_sdef_find(const char *name)
 {
@@ -1786,9 +1787,48 @@ static char *masm_pp_xform(char *line)
     char w1[256], w2[256], tmp[512];
     size_t l1, l2;
 
+    /* Inside a COMMENT block: swallow lines until the delimiter recurs. */
+    if (masm_comment_delim) {
+        if (strchr(line, masm_comment_delim))
+            masm_comment_delim = 0;
+        nasm_free(line);
+        return nasm_strdup("");
+    }
+
     l1 = masm_word(&p, w1, sizeof w1);
     if (!l1)
         return line;
+
+    /* MASM COMMENT delim [text] ... delim  -- a block comment. */
+    if (!nasm_stricmp(w1, "comment")) {
+        const char *d = p;
+        while (*d == ' ' || *d == '\t')
+            d++;
+        if (*d) {
+            char delim = *d;
+            const char *rest = strchr(d + 1, delim);
+            nasm_free(line);
+            if (!rest)                          /* opens a multi-line block */
+                masm_comment_delim = delim;
+            return nasm_strdup("");             /* delimiter found again -> one-liner */
+        }
+    }
+
+    /* MASM listing / cross-reference directives: no-ops for code generation. */
+    if (w1[0] == '.') {
+        static const char *const noops[] = {
+            ".xcref", ".cref", ".lall", ".sall", ".xall", ".list", ".nolist",
+            ".xlist", ".lfcond", ".sfcond", ".tfcond", ".seq", ".alpha",
+            ".listall", ".listif", ".listmacro", ".listmacroall", ".nolistif",
+            ".nolistmacro", NULL
+        };
+        int i;
+        for (i = 0; noops[i]; i++)
+            if (!nasm_stricmp(w1, noops[i])) {
+                nasm_free(line);
+                return nasm_strdup("");
+            }
+    }
 
     /*
      * Inside a STRUCT definition: each line is `member TYPE [init]', which
