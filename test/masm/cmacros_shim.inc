@@ -128,30 +128,34 @@
 %1:
 %endmacro
 
+;; Parameters are used WITHOUT brackets (`mov ax,p' / `les si,p'), so bind them
+;; to the memory operand [bp+off] (unsized -- the instruction infers the size,
+;; and a size prefix would break `les').  Locals are used WITH brackets in the
+;; source (`mov [v],cl'), so bind them to the bare offset bp-off.
 %imacro parmB 1
-    %xdefine %1 byte [bp + __cp_parmo]
+    %xdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 2
 %endmacro
 %imacro parmW 1
-    %xdefine %1 word [bp + __cp_parmo]
+    %xdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 2
 %endmacro
 %imacro parmD 1
-    %xdefine %1 dword [bp + __cp_parmo]
+    %xdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 4
 %endmacro
 
 %imacro localB 1
     %assign __cp_localo __cp_localo + 2
-    %xdefine %1 byte [bp - __cp_localo]
+    %xdefine %1 bp - __cp_localo
 %endmacro
 %imacro localW 1
     %assign __cp_localo __cp_localo + 2
-    %xdefine %1 word [bp - __cp_localo]
+    %xdefine %1 bp - __cp_localo
 %endmacro
 %imacro localD 1
     %assign __cp_localo __cp_localo + 4
-    %xdefine %1 dword [bp - __cp_localo]
+    %xdefine %1 bp - __cp_localo
 %endmacro
 
 ;; cBegin -- prologue.  cEnd -- epilogue (retf for FAR, ret for NEAR).
