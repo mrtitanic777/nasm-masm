@@ -1594,6 +1594,42 @@ static bool masm_ident_only(const char *s)
     return *p == '\0';
 }
 
+/*
+ * True if s is a single atomic reference -- a bare identifier, or a lone macro
+ * parameter placeholder (%{N} / %N) with nothing else.  Such a right-hand side
+ * of `LHS = ref' is a textual alias, safe to bind with %define (deferring the
+ * reference to the use site) rather than %assign (which forces immediate,
+ * possibly-forward, evaluation).
+ */
+static bool masm_atom_ref(const char *s)
+{
+    const char *p = s;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    if (masm_ident_only(p))
+        return true;
+    if (*p == '%') {
+        p++;
+        if (*p == '{') {
+            p++;
+            while (*p && *p != '}')
+                p++;
+            if (*p != '}')
+                return false;
+            p++;
+        } else {
+            if (!nasm_isdigit(*p))
+                return false;
+            while (nasm_isdigit(*p))
+                p++;
+        }
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+            p++;
+        return *p == '\0';
+    }
+    return false;
+}
+
 /* A MASM conditional-assembly keyword (so it is never a STRUC member line). */
 static bool masm_is_cond(const char *w)
 {
@@ -1752,6 +1788,52 @@ static char *masm_rewrite_line(char *line)
             const char *pre = NULL, *post = NULL;
             while (nasm_isidchar(p[wl]))
                 wl++;
+
+            /*
+             * MASM word operators in OPERAND position -> C-style symbolic
+             * (`and si, not (X)' -> `and si, ~(X)').  and/or/xor/shl/shr/not
+             * are also instruction mnemonics, so only translate when the token
+             * is clearly an operator, never the leading mnemonic: a binary op
+             * must follow a value (identifier / number / `)' / `]'); the unary
+             * `not' must follow an operator, comma or opening bracket.  A token
+             * at line start or just after `label:' is the mnemonic -- left as-is.
+             */
+            {
+                const char *sym = NULL;
+                bool unary = false;
+                if      (wl == 3 && !nasm_strnicmp(p, "and", 3)) sym = "&";
+                else if (wl == 2 && !nasm_strnicmp(p, "or",  2)) sym = "|";
+                else if (wl == 3 && !nasm_strnicmp(p, "xor", 3)) sym = "^";
+                else if (wl == 3 && !nasm_strnicmp(p, "shl", 3)) sym = "<<";
+                else if (wl == 3 && !nasm_strnicmp(p, "shr", 3)) sym = ">>";
+                else if (wl == 3 && !nasm_strnicmp(p, "not", 3)) {
+                    sym = "~"; unary = true;
+                }
+                if (sym) {
+                    char prevsig = 0;
+                    char *b = o;
+                    bool vend, isop;
+                    while (b > out && (b[-1] == ' ' || b[-1] == '\t'))
+                        b--;
+                    if (b > out)
+                        prevsig = b[-1];
+                    vend = prevsig == ')' || prevsig == ']' ||
+                           prevsig == '_' || prevsig == '?' || prevsig == '$' ||
+                           (prevsig >= '0' && prevsig <= '9') ||
+                           (prevsig >= 'A' && prevsig <= 'Z') ||
+                           (prevsig >= 'a' && prevsig <= 'z');
+                    if (unary)
+                        isop = prevsig != 0 && prevsig != ':' && !vend;
+                    else
+                        isop = vend;
+                    if (isop) {
+                        o += sprintf(o, "%s", sym);
+                        p += wl;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
 
             /* SIZEOF name / TYPE name  ->  name_size
              * MASK field -> MASK_field ; WIDTH field -> WIDTH_field (RECORD) */
@@ -2067,8 +2149,25 @@ static char *masm_pp_xform(char *line)
             le = strlen(lp);
             while (le && (lp[le-1]==' '||lp[le-1]=='\t')) lp[--le] = '\0';
             if (strstr(lp, "%{")) {
+                const char *xr;
                 masm_xlat_ops(ex, sizeof ex, eqp + 1);
-                snprintf(tmp, sizeof tmp, "%%assign %s %s", lp, ex);
+                xr = ex;
+                while (*xr == ' ' || *xr == '\t')
+                    xr++;
+                /*
+                 * A `&'-generated symbol assigned a lone identifier
+                 * (`_hft_&count = handler') is a textual alias, not a value:
+                 * the RHS is often a label defined LATER (a forward handler
+                 * address), so a numeric %assign would fail "not defined
+                 * before use".  %define defers resolution to the use site
+                 * (`dw _hft_0' -> `dw la_trap').  The LHS always carries a
+                 * %{...} paste and the RHS is a bare identifier, so the two
+                 * can never be equal -- no direct self-reference cycle.
+                 */
+                if (masm_atom_ref(xr))
+                    snprintf(tmp, sizeof tmp, "%%define %s %s", lp, xr);
+                else
+                    snprintf(tmp, sizeof tmp, "%%assign %s %s", lp, ex);
                 nasm_free(line);
                 masm_ppq_add(nasm_strdup(tmp));
                 return masm_ppq_get();
