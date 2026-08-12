@@ -1519,10 +1519,15 @@ static char *line_from_file(FILE *f)
 struct masm_ppblk {
     struct masm_ppblk *next;
     bool is_macro;
+    bool is_for;                /* FOR/IRP/IRPC: replay the body per list item */
     int nparam;
     char **param;
+    char *forname;              /* minted temp-macro name for a FOR/IRP body */
+    char **item;                /* the FOR/IRP list items (or IRPC chars) */
+    int nitem;
 };
 static struct masm_ppblk *masm_ppstk;
+static int masm_for_seq;        /* uniquifier for FOR/IRP temp-macro names */
 
 struct masm_ppq {
     struct masm_ppq *next;
@@ -1819,7 +1824,20 @@ static char *masm_pp_xform(char *line)
         if (!b)
             return line;                /* stray ENDM: let NASM diagnose */
         masm_ppstk = b->next;
-        if (b->is_macro) {
+        if (b->is_for) {
+            /* Close the temp macro, then replay it once per list item. */
+            int i;
+            masm_ppq_add(nasm_strdup("%endmacro"));
+            for (i = 0; i < b->nitem; i++) {
+                snprintf(tmp, sizeof tmp, "%s %s", b->forname, b->item[i]);
+                masm_ppq_add(nasm_strdup(tmp));
+                nasm_free(b->item[i]);
+            }
+            snprintf(tmp, sizeof tmp, "%%unmacro %s 1", b->forname);
+            masm_ppq_add(nasm_strdup(tmp));
+            nasm_free(b->item);
+            nasm_free(b->forname);
+        } else if (b->is_macro) {
             int i;
             for (i = 0; i < b->nparam; i++) {
                 snprintf(tmp, sizeof tmp, "%%undef %s", b->param[i]);
@@ -1832,6 +1850,101 @@ static char *masm_pp_xform(char *line)
             masm_ppq_add(nasm_strdup("%endrep"));
         }
         nasm_free(b);
+        nasm_free(line);
+        return masm_ppq_get();
+    }
+
+    if (!nasm_stricmp(w1, "exitm")) {
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup("%exitmacro"));
+        return masm_ppq_get();
+    }
+
+    if (!nasm_stricmp(w1, "for")  || !nasm_stricmp(w1, "irp") ||
+        !nasm_stricmp(w1, "forc") || !nasm_stricmp(w1, "irpc")) {
+        /*
+         * FOR/IRP param, <a,b,c>   (IRPC/FORC: iterate the characters of arg)
+         * Lower to a fresh 1-arg macro whose body is the loop body, replayed
+         * once per list item at ENDM.
+         */
+        bool bychar = !nasm_stricmp(w1, "forc") || !nasm_stricmp(w1, "irpc");
+        char param[128], nm[64];
+        const char *q = p;
+        size_t pn = 0;
+        struct masm_ppblk *b;
+        char **item = NULL;
+        int nitem = 0;
+
+        while (*q == ' ' || *q == '\t')
+            q++;
+        while (nasm_isidchar(*q)) {          /* the loop parameter name */
+            if (pn + 1 < sizeof param)
+                param[pn++] = *q;
+            q++;
+        }
+        param[pn] = '\0';
+        while (*q == ' ' || *q == '\t')
+            q++;
+        if (*q == ',')
+            q++;
+        while (*q == ' ' || *q == '\t')
+            q++;
+
+        if (bychar) {                        /* each character becomes an item */
+            const char *s = q;
+            if (*s == '<') s++;
+            for (; *s && *s != '>'; s++) {
+                char one[2];
+                if (*s == ' ' || *s == '\t')
+                    continue;
+                one[0] = *s; one[1] = '\0';
+                item = nasm_realloc(item, (nitem + 1) * sizeof(char *));
+                item[nitem++] = nasm_strdup(one);
+            }
+        } else {                             /* split the <...> list on commas */
+            const char *s = q;
+            int depth = 0;
+            char buf[192];
+            size_t bn = 0;
+            if (*s == '<') { s++; depth = 1; }
+            for (; *s; s++) {
+                if (*s == '<') { depth++; }
+                else if (*s == '>') { if (depth <= 1) break; depth--; }
+                if (*s == ',' && depth <= 1) {
+                    buf[bn] = '\0';
+                    {   char *t = buf; while (*t==' '||*t=='\t') t++;
+                        size_t e = strlen(t);
+                        while (e && (t[e-1]==' '||t[e-1]=='\t')) t[--e]='\0';
+                        item = nasm_realloc(item, (nitem+1)*sizeof(char*));
+                        item[nitem++] = nasm_strdup(t); }
+                    bn = 0;
+                    continue;
+                }
+                if (bn + 1 < sizeof buf)
+                    buf[bn++] = *s;
+            }
+            buf[bn] = '\0';                  /* the final item */
+            {   char *t = buf; while (*t==' '||*t=='\t') t++;
+                size_t e = strlen(t);
+                while (e && (t[e-1]==' '||t[e-1]=='\t')) t[--e]='\0';
+                if (*t) {
+                    item = nasm_realloc(item, (nitem+1)*sizeof(char*));
+                    item[nitem++] = nasm_strdup(t);
+                } }
+        }
+
+        snprintf(nm, sizeof nm, "__?masm_for%d?__", ++masm_for_seq);
+        snprintf(tmp, sizeof tmp, "%%macro %s 1", nm);
+        masm_ppq_add(nasm_strdup(tmp));
+        snprintf(tmp, sizeof tmp, "%%define %s %%1", param);
+        masm_ppq_add(nasm_strdup(tmp));
+        nasm_new(b);
+        b->is_for = true;
+        b->forname = nasm_strdup(nm);
+        b->item = item;
+        b->nitem = nitem;
+        b->next = masm_ppstk;
+        masm_ppstk = b;
         nasm_free(line);
         return masm_ppq_get();
     }

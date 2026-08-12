@@ -57,6 +57,7 @@ real ML 6.11:
 | `hll_ifchain` | `.ELSEIF` chains, flag conditions (`CARRY?`/`ZERO?`/`!ZERO?`/`SIGN?`), signed compares (`SDWORD PTR`) — `-Ox` = ML |
 | `hll_andor` | boolean `&&` (AND) / `||` (OR) with short-circuit lowering in `.IF` — `-Ox` = ML |
 | `hll_macro` | `MACRO`/`ENDM`, `REPT`, `TEXTEQU`, `=` (`= ML`) |
+| `hll_for` | `FOR`/`IRP` list iteration and `EXITM` (`= ML`) |
 | `hll_cond` | `IF`/`IFE`/`IFDEF`/`IFNDEF`/`ELSE`/`ELSEIF`/`ENDIF` assembly-time conditionals (`= ML`) |
 | `hll_struct` | `STRUCT`/`ENDS` (incl. `DUP` arrays, nested), `[reg].STRUCT.member`, `SIZEOF STRUCT` (`= ML`) |
 | `hll_struct_inst` | static instances `label S <i,...>` + instance-member access `label.m` (load/store/word/rmw = ML) |
