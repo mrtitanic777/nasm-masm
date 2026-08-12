@@ -1620,6 +1620,45 @@ static char *masm_pp_xform(char *line)
     }
 
     {
+        /*
+         * Conditional assembly: MASM's IF-family -> NASM's %if-family.  NASM's
+         * preprocessor tracks %if/%endif nesting itself, so no block stack is
+         * needed here.  (The runtime .IF/.ENDIF of Track B are dot-prefixed and
+         * handled in the package; these bare forms are assembly-time.)
+         */
+        const char *rest = p;
+        const char *dir = NULL;
+        while (*rest == ' ' || *rest == '\t')
+            rest++;
+        if      (!nasm_stricmp(w1, "if"))     dir = "%if";
+        else if (!nasm_stricmp(w1, "ifdef"))  dir = "%ifdef";
+        else if (!nasm_stricmp(w1, "ifndef")) dir = "%ifndef";
+        else if (!nasm_stricmp(w1, "elseif")) dir = "%elif";
+        if (dir) {
+            snprintf(tmp, sizeof tmp, "%s %s", dir, rest);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
+        }
+        if (!nasm_stricmp(w1, "ife")) {         /* IFE: assemble if expr == 0 */
+            snprintf(tmp, sizeof tmp, "%%if (%s) == 0", rest);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
+        }
+        if (!nasm_stricmp(w1, "else")) {
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup("%else"));
+            return masm_ppq_get();
+        }
+        if (!nasm_stricmp(w1, "endif")) {
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup("%endif"));
+            return masm_ppq_get();
+        }
+    }
+
+    {
         /* NAME = value  ->  %assign NAME value  (redefinable numeric equate) */
         const char *pe = p;
         while (*pe == ' ' || *pe == '\t')
