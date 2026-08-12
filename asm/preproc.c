@@ -1812,6 +1812,18 @@ static char *masm_subst_params(char *line, char **param, int nparam)
             *o++ = *p++;
             continue;
         }
+        /*
+         * MASM's `&' substitution/paste operator (inside a macro body): drop it
+         * where it joins a parameter to adjacent text, so `ln&OFFSET' becomes
+         * `%{2}OFFSET' -> `CODEOFFSET' after paste.  As a macro-body operator it
+         * is never bitwise-AND (that is the AND keyword), so this is unambiguous.
+         */
+        if (*p == '&' &&
+            ((p > line && nasm_isidchar(p[-1])) || nasm_isidchar(p[1]))) {
+            p++;
+            changed = true;
+            continue;
+        }
         if (nasm_isidstart(*p) &&
             (p == line || (!nasm_isidchar(p[-1]) && p[-1] != '%' && p[-1] != '.'))) {
             size_t wl = 0;
