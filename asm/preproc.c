@@ -1845,6 +1845,42 @@ static char *masm_subst_params(char *line, char **param, int nparam)
     return out;
 }
 
+/*
+ * Translate MASM's word operators to NASM's symbolic ones within an expression
+ * (an IF/IFE condition or a `=' right-hand side).  Whole-word, case-insensitive,
+ * skipping string literals.  EQ NE LT GT LE GE -> == != < > <= >= ; MOD SHL SHR
+ * -> % << >> ; AND OR XOR NOT -> & | ^ ~ .  (These words are unambiguous in an
+ * expression; as a line's leading mnemonic they are handled elsewhere.)
+ */
+static void masm_xlat_ops(char *dst, size_t dsz, const char *src)
+{
+    static const struct { const char *w; const char *op; } ops[] = {
+        {"eq","=="}, {"ne","!="}, {"le","<="}, {"ge",">="}, {"lt","<"},
+        {"gt",">"}, {"mod","%"}, {"shl","<<"}, {"shr",">>"}, {"and","&"},
+        {"or","|"}, {"xor","^"}, {"not","~"}, {NULL,NULL}
+    };
+    char *o = dst;
+    const char *p = src;
+    char q = 0;
+    while (*p && (size_t)(o - dst) + 8 < dsz) {
+        if (q) { if (*p == q) q = 0; *o++ = *p++; continue; }
+        if (*p == '\'' || *p == '"') { q = *p; *o++ = *p++; continue; }
+        if (nasm_isidstart(*p) &&
+            (p == src || (!nasm_isidchar(p[-1]) && p[-1] != '.'))) {
+            size_t wl = 0; int i, hit = -1;
+            while (nasm_isidchar(p[wl])) wl++;
+            for (i = 0; ops[i].w; i++)
+                if (strlen(ops[i].w) == wl && !nasm_strnicmp(p, ops[i].w, wl)) {
+                    hit = i; break;
+                }
+            if (hit >= 0) { o += sprintf(o, "%s", ops[hit].op); p += wl; continue; }
+            memcpy(o, p, wl); o += wl; p += wl; continue;
+        }
+        *o++ = *p++;
+    }
+    *o = '\0';
+}
+
 static char *masm_pp_xform(char *line)
 {
     const char *p = line;
@@ -1891,8 +1927,10 @@ static char *masm_pp_xform(char *line)
                 while (*eq == ' ' || *eq == '\t')
                     eq++;
                 if (*eq == '=' && eq[1] != '=') {
+                    char ex[512];
+                    masm_xlat_ops(ex, sizeof ex, eq + 1);
                     snprintf(tmp, sizeof tmp, "%%assign %.*s %s",
-                             (int)(e - q + 1), q, eq + 1);
+                             (int)(e - q + 1), q, ex);
                     nasm_free(line);
                     masm_ppq_add(nasm_strdup(tmp));
                     return masm_ppq_get();
@@ -2220,13 +2258,21 @@ static char *masm_pp_xform(char *line)
         else if (!nasm_stricmp(w1, "if1"))    { dir = "%if"; rest = "1"; }
         else if (!nasm_stricmp(w1, "if2"))    { dir = "%if"; rest = "0"; }
         if (dir) {
-            snprintf(tmp, sizeof tmp, "%s %s", dir, rest);
+            if (!nasm_stricmp(dir, "%if") || !nasm_stricmp(dir, "%elif")) {
+                char ex[512];
+                masm_xlat_ops(ex, sizeof ex, rest);  /* IF/ELSEIF: word ops */
+                snprintf(tmp, sizeof tmp, "%s %s", dir, ex);
+            } else {
+                snprintf(tmp, sizeof tmp, "%s %s", dir, rest);
+            }
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
         }
         if (!nasm_stricmp(w1, "ife")) {         /* IFE: assemble if expr == 0 */
-            snprintf(tmp, sizeof tmp, "%%if (%s) == 0", rest);
+            char ex[512];
+            masm_xlat_ops(ex, sizeof ex, rest);
+            snprintf(tmp, sizeof tmp, "%%if (%s) == 0", ex);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
@@ -2300,7 +2346,9 @@ static char *masm_pp_xform(char *line)
         while (*pe == ' ' || *pe == '\t')
             pe++;
         if (*pe == '=' && pe[1] != '=') {
-            snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, pe + 1);
+            char ex[512];
+            masm_xlat_ops(ex, sizeof ex, pe + 1);
+            snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, ex);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
