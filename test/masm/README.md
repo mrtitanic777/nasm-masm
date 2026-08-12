@@ -7,12 +7,21 @@ source-compatibility mode). See [`../../docs/MASM-COMPAT-ROADMAP.md`](../../docs
 
 ```sh
 python run.py                    # check every fixture; exit 1 on any mismatch
+python run.py --objects          # also check -f obj (OMF) and -f win32 (COFF)
 python run.py --update           # regenerate golden/*.hex after an intended change
 python run.py --nasm ../../nasm  # pick the nasm binary (default: ../../nasm[.exe])
 ```
 
 `run.py` assembles each `fixtures/*.asm` with `nasm --masm -f bin` and compares
 the emitted bytes to `golden/<name>.hex`.
+
+With `--objects`, each MASM-segment fixture (`directives`, `objseg`) is also
+assembled to `-f obj` (OMF) and `-f win32` (COFF); a self-contained reader
+pulls the `_TEXT` code back out and asserts it equals the `-f bin` golden. This
+proves the `NAME segment ... use32 ...` scaffolding yields a faithful 32-bit
+code segment in the object backends, not only in flat `-f bin`. (Full
+OBJ-*record* byte-parity against `ML.EXE` is a separate, oracle-gated goal — see
+the roadmap; here we prove the code path through each backend.)
 
 ## Fixtures
 

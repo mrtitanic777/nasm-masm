@@ -26,8 +26,19 @@ USE: masm
 ;; CPU directive (.386 etc.) or a standalone USE16/USE32/USE64; class/align
 ;; translation for the object backends is future work.
 %imacro segment 0-1+.nolist
-  %define __?SECT?__ [segment %00]
-	__?SECT?__
+  ; Emit a NASM segment named NAME whose USE follows the current CPU mode
+  ; (.386 -> use32), captured from __?BITS?__ before the section switch resets
+  ; it to the segment default -- so the object backends (-f obj/coff) get 32-bit
+  ; code and a USE32 header, and `-f bin' is unaffected (it has no segments).
+  ; The MASM align/combine/class attributes (%1) are swallowed and dropped; they
+  ; do not change the code bytes. Translating them to NASM's class=/align=/
+  ; combine for a fully faithful object header is future work.
+  %assign %%usebits __?BITS?__
+  %ifidn __?OUTPUT_FORMAT?__, bin
+    [segment %00]                        ; -f bin has no segments; USE is moot
+  %else
+    [segment %00 use %+ %%usebits]
+  %endif
 %endmacro
 
 %imacro ends 0+.nolist
@@ -86,9 +97,6 @@ USE: masm
 %idefine .586p [bits 32]
 %idefine .686  [bits 32]
 %idefine .686p [bits 32]
-%idefine use16 [bits 16]
-%idefine use32 [bits 32]
-%idefine use64 [bits 64]
 ;; FPU selection directives have no effect on integer encoding: accept, ignore.
 %idefine .8087
 %idefine .287

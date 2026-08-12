@@ -158,11 +158,129 @@ def check_corpus(nasm, cdir):
     return 0 if (exact == nfrag and errors == 0) else 1
 
 
+# --- object-backend code faithfulness (self-contained OMF + COFF readers) -----
+#
+# The MASM `NAME segment ... use32 ...' scaffolding must yield a 32-bit code
+# segment in the object backends too, not only in `-f bin'. These minimal
+# readers pull the code bytes back out of a `-f obj' (OMF) and `-f win32' (COFF)
+# object so we can assert they equal the `-f bin' golden. (Full OBJ-record
+# byte-parity against ML is a separate, oracle-gated goal; here we prove the
+# code path through each backend is faithful.)
+
+def _omf_index(b, p):
+    return ((((b[p] & 0x7F) << 8) | b[p + 1]), p + 2) if b[p] & 0x80 else (b[p], p + 1)
+
+
+def omf_code(data):
+    """Code bytes of the CODE/_TEXT segment from an OMF object (LNAMES/SEGDEF/LEDATA)."""
+    i = 0
+    lnames = [""]
+    segs = []
+    segb = {}
+    while i + 3 <= len(data):
+        t = data[i]
+        ln = data[i + 1] | (data[i + 2] << 8)
+        body = data[i + 3:i + 3 + ln - 1]
+        i += 3 + ln
+        if t == 0x96:                                   # LNAMES
+            p = 0
+            while p < len(body):
+                l = body[p]
+                lnames.append(body[p + 1:p + 1 + l].decode("latin1"))
+                p += 1 + l
+        elif t in (0x98, 0x99):                         # SEGDEF / SEGDEF32
+            wide = t == 0x99
+            p = 0
+            acbp = body[p]; p += 1
+            if (acbp >> 5) == 0:                         # absolute segment: frame+offset
+                p += 3
+            p += 4 if wide else 2                        # segment length
+            si, p = _omf_index(body, p)
+            ci, p = _omf_index(body, p)
+            name = lnames[si] if si < len(lnames) else "_TEXT"
+            cls = lnames[ci] if ci < len(lnames) else ""
+            segs.append((name, cls))
+            segb.setdefault(name, bytearray())
+        elif t in (0xA0, 0xA1):                         # LEDATA / LEDATA32
+            wide = t == 0xA1
+            p = 0
+            si, p = _omf_index(body, p)
+            off = int.from_bytes(body[p:p + (4 if wide else 2)], "little")
+            p += 4 if wide else 2
+            dat = body[p:]
+            if 0 < si <= len(segs):
+                bb = segb[segs[si - 1][0]]
+                if len(bb) < off + len(dat):
+                    bb.extend(b"\0" * (off + len(dat) - len(bb)))
+                bb[off:off + len(dat)] = dat
+    for name, cls in segs:
+        if "CODE" in cls.upper() or name.upper().endswith("TEXT"):
+            return bytes(segb[name])
+    return None
+
+
+def coff_code(data):
+    """Code bytes of the _TEXT/.text section from a COFF object."""
+    import struct
+    nsec = struct.unpack_from("<H", data, 2)[0]
+    opt = struct.unpack_from("<H", data, 16)[0]
+    off = 20 + opt
+    for k in range(nsec):
+        sh = data[off + k * 40: off + k * 40 + 40]
+        name = sh[0:8].rstrip(b"\0")
+        _vs, _va, size, ptr = struct.unpack_from("<IIII", sh, 8)
+        if name.upper().endswith(b"TEXT") and size and ptr:
+            return data[ptr:ptr + size]
+    return None
+
+
+def check_objects(nasm):
+    """For each fixture that defines a segment, assemble -f obj and -f win32 and
+    assert the extracted code equals the fixture's -f bin golden."""
+    readers = [("obj", "obj", omf_code), ("win32", "coff", coff_code)]
+    npass = nfail = nskip = 0
+    for asm in sorted(glob.glob(os.path.join(FIXTURES, "*.asm"))):
+        name = os.path.splitext(os.path.basename(asm))[0]
+        gold = os.path.join(GOLDEN, name + ".hex")
+        if not os.path.exists(gold):
+            continue
+        with open(asm) as f:
+            src = f.read()
+        if not re.search(r"(?im)^\s*\S+\s+segment\b", src):
+            nskip += 1               # flat fixture: an -f bin test, not an object
+            continue
+        with open(gold) as f:
+            want = bytes.fromhex(f.read().strip())
+        for fmt, tag, reader in readers:
+            tmp = os.path.join(HERE, f".{name}.{tag}")
+            r = subprocess.run([nasm, "--masm", "-f", fmt, asm, "-o", tmp],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                first = (r.stderr.strip().splitlines() or [""])[0]
+                print(f"FAIL {name} [-f {fmt}]: assemble error: {first}")
+                nfail += 1
+                continue
+            with open(tmp, "rb") as fh:
+                code = reader(fh.read())
+            os.remove(tmp)
+            if code == want:
+                print(f"PASS {name} [-f {fmt}] ({len(code)} bytes)")
+                npass += 1
+            else:
+                got = code.hex() if code else "<no code segment>"
+                print(f"FAIL {name} [-f {fmt}]:\n  got  {got}\n  want {want.hex()}")
+                nfail += 1
+    print(f"\nobjects: {npass} passed, {nfail} failed, {nskip} skipped (flat, -f bin only)")
+    return nfail
+
+
 def main():
     ap = argparse.ArgumentParser(description="MASM-mode regression harness")
     ap.add_argument("--nasm", help="nasm binary (default: ../../nasm[.exe])")
     ap.add_argument("--update", action="store_true", help="regenerate golden files")
     ap.add_argument("--corpus", metavar="DIR", help="also validate an external corpus by path")
+    ap.add_argument("--objects", action="store_true",
+                    help="also check -f obj (OMF) and -f win32 (COFF) code faithfulness")
     args = ap.parse_args()
 
     nasm = find_nasm(args.nasm)
@@ -172,6 +290,9 @@ def main():
     print(f"nasm: {nasm}\n")
 
     rc = check_fixtures(nasm, args.update)
+    if args.objects and not args.update:
+        print()
+        rc += check_objects(nasm)
     if args.corpus and not args.update:
         print()
         rc += check_corpus(nasm, args.corpus)
