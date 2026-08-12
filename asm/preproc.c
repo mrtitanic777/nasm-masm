@@ -1574,8 +1574,48 @@ static size_t masm_word(const char **pp, char *buf, size_t bufsz)
     return n;
 }
 
-/* MASM STRUCT state: while collecting members between STRUCT and ENDS. */
+/*
+ * MASM STRUCT bookkeeping.  Definitions translate to a NASM `struc' (offsets +
+ * size), but static instances (`pt POINT <a,b>') need the member list to emit
+ * each field's initialised data, so keep an ordered table on the side.
+ */
+struct masm_smember {
+    char *name;
+    const char *dir;            /* "db"/"dw"/"dd"/"dq"/"dt" (static string) */
+    int count;                  /* array count from `N DUP(...)' */
+    struct masm_smember *next;
+};
+struct masm_sdef {
+    char *name;
+    struct masm_smember *head, *tail;
+    struct masm_sdef *next;
+};
+static struct masm_sdef *masm_sdefs;      /* all completed struct definitions */
+static struct masm_sdef *masm_sdef_cur;   /* the one currently being defined  */
 static bool masm_in_struct;
+
+static struct masm_sdef *masm_sdef_find(const char *name)
+{
+    struct masm_sdef *s;
+    for (s = masm_sdefs; s; s = s->next)
+        if (!nasm_stricmp(s->name, name))
+            return s;
+    return NULL;
+}
+
+/* MASM member type -> NASM data directive (for emitting instance data). */
+static const char *masm_type_to_dd(const char *t)
+{
+    if (!nasm_stricmp(t, "byte")  || !nasm_stricmp(t, "db") ||
+        !nasm_stricmp(t, "sbyte")) return "db";
+    if (!nasm_stricmp(t, "word")  || !nasm_stricmp(t, "dw") ||
+        !nasm_stricmp(t, "sword")) return "dw";
+    if (!nasm_stricmp(t, "dword") || !nasm_stricmp(t, "dd") ||
+        !nasm_stricmp(t, "sdword")) return "dd";
+    if (!nasm_stricmp(t, "qword") || !nasm_stricmp(t, "dq")) return "dq";
+    if (!nasm_stricmp(t, "tbyte") || !nasm_stricmp(t, "dt")) return "dt";
+    return NULL;
+}
 
 /* MASM member type -> NASM reservation directive (for a struc field). */
 static const char *masm_type_to_res(const char *t)
@@ -1726,6 +1766,11 @@ static char *masm_pp_xform(char *line)
         size_t mtl = masm_word(&mp, mtype, sizeof mtype);
         if (mtl && !nasm_stricmp(mtype, "ends")) {
             masm_in_struct = false;
+            if (masm_sdef_cur) {                /* commit the definition */
+                masm_sdef_cur->next = masm_sdefs;
+                masm_sdefs = masm_sdef_cur;
+                masm_sdef_cur = NULL;
+            }
             nasm_free(line);
             masm_ppq_add(nasm_strdup("endstruc"));
             return masm_ppq_get();
@@ -1745,6 +1790,18 @@ static char *masm_pp_xform(char *line)
                     dp++;
                 if (n > 0 && !nasm_strnicmp(dp, "dup", 3))
                     count = n;
+            }
+            if (masm_sdef_cur) {                /* record for instance emission */
+                struct masm_smember *mb;
+                nasm_new(mb);
+                mb->name = nasm_strdup(w1);
+                mb->dir = masm_type_to_dd(mtype);
+                mb->count = count;
+                if (masm_sdef_cur->tail)
+                    masm_sdef_cur->tail->next = mb;
+                else
+                    masm_sdef_cur->head = mb;
+                masm_sdef_cur->tail = mb;
             }
             if (res)
                 snprintf(tmp, sizeof tmp, ".%s: %s %d", w1, res, count);
@@ -1848,10 +1905,84 @@ static char *masm_pp_xform(char *line)
 
     if (l2 && (!nasm_stricmp(w2, "struct") || !nasm_stricmp(w2, "struc"))) {
         /* NAME STRUCT  ->  struc NAME; members collected until NAME ENDS. */
+        struct masm_sdef *sd;
         masm_in_struct = true;
+        nasm_new(sd);
+        sd->name = nasm_strdup(w1);
+        masm_sdef_cur = sd;
         snprintf(tmp, sizeof tmp, "struc %s", w1);
         nasm_free(line);
         masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
+    if (l2 && masm_sdef_find(w2)) {
+        /*
+         * `label STRUCTTYPE <i0, i1, ...>' -- a static struct instance.  Emit a
+         * labelled data block so each field gets a real address; the MASM data-
+         * label typing (keyed on the literal label string) then makes a bare
+         * `label.member' reference mean its contents.  The field labels use the
+         * full `label.member' name so the set-time and get-time keys match:
+         *     label:
+         *     label.m0  <dir0>  i0-or-0
+         *     label.m1  <dir1>  i1-or-0
+         */
+        struct masm_sdef *sd = masm_sdef_find(w2);
+        struct masm_smember *mb;
+        const char *ip = p;
+        char inits[32][192];
+        int ninit = 0, mi;
+
+        while (*ip == ' ' || *ip == '\t')
+            ip++;
+        if (*ip == '<') {                       /* split top-level <...> inits */
+            int depth = 0;
+            const char *s;
+            char *d = inits[0];
+            size_t n = 0;
+            ip++;                               /* past '<' */
+            for (s = ip; *s; s++) {
+                if (*s == '<') depth++;
+                else if (*s == '>') {
+                    if (depth == 0) break;
+                    depth--;
+                }
+                if (*s == ',' && depth == 0) {
+                    d[n] = '\0';
+                    if (ninit < 31) { ninit++; d = inits[ninit]; n = 0; }
+                    continue;
+                }
+                if (n + 1 < sizeof inits[0])
+                    d[n++] = *s;
+            }
+            d[n] = '\0';
+            ninit++;                            /* count the last field */
+        }
+
+        snprintf(tmp, sizeof tmp, "%s:", w1);
+        masm_ppq_add(nasm_strdup(tmp));
+        for (mb = sd->head, mi = 0; mb; mb = mb->next, mi++) {
+            char val[192];
+            const char *v = "0";
+            if (mi < ninit) {                   /* trim the field's init text */
+                char *b = inits[mi];
+                while (*b == ' ' || *b == '\t') b++;
+                snprintf(val, sizeof val, "%s", b);
+                { size_t e = strlen(val);
+                  while (e && (val[e-1]==' '||val[e-1]=='\t'||val[e-1]=='\r'))
+                      val[--e] = '\0'; }
+                if (val[0])
+                    v = val;
+            }
+            const char *dir = mb->dir ? mb->dir : "dd";  /* nested: best effort */
+            if (mb->count > 1)
+                snprintf(tmp, sizeof tmp, "%s.%s\ttimes %d %s %s",
+                         w1, mb->name, mb->count, dir, v);
+            else
+                snprintf(tmp, sizeof tmp, "%s.%s\t%s %s", w1, mb->name, dir, v);
+            masm_ppq_add(nasm_strdup(tmp));
+        }
+        nasm_free(line);
         return masm_ppq_get();
     }
 
