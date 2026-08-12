@@ -65,6 +65,7 @@ real ML 6.11:
 | `hll_struct_inst` | static instances `label S <i,...>` + instance-member access `label.m` (load/store/word/rmw = ML) |
 | `hll_union` | `UNION` types — members overlap at offset 0, `SIZEOF` = largest member (`= ML`) |
 | `hll_typedef` | `TYPEDEF` aliases — primitive and `PTR`/`PROTO` (pointer=4); usable as a data type + `SIZEOF` (`= ML`) |
+| `hll_record` | `RECORD` bit-packed fields — field=shift, `MASK`/`WIDTH` operators, instance packing (`= ML`) |
 | `hll_expr` | expression operators `TYPE`/`SIZEOF` (struct + primitive), `LOW`/`HIGH`/`LOWWORD`/`HIGHWORD`, radix `1010b`/`17q` (`= ML`) |
 
 Each `.asm` header explains the behaviour and annotates the expected bytes

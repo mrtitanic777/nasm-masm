@@ -1588,11 +1588,14 @@ struct masm_smember {
     char *name;
     const char *dir;            /* "db"/"dw"/"dd"/"dq"/"dt" (static string) */
     int count;                  /* array count from `N DUP(...)' */
+    int shift;                  /* RECORD: bit position of the field's low bit */
     struct masm_smember *next;
 };
 struct masm_sdef {
     char *name;
     bool is_union;              /* UNION: all members at offset 0, size = max */
+    bool is_record;             /* RECORD: bit-packed fields in one integer */
+    const char *rdir;           /* RECORD: the packed integer's data directive */
     int usize;                  /* running max member size, for a union */
     struct masm_smember *head, *tail;
     struct masm_sdef *next;
@@ -1698,20 +1701,30 @@ static char *masm_rewrite_line(char *line)
             while (nasm_isidchar(p[wl]))
                 wl++;
 
-            /* SIZEOF name / TYPE name  ->  name_size */
-            if ((wl == 6 && !nasm_strnicmp(p, "sizeof", 6)) ||
-                (wl == 4 && !nasm_strnicmp(p, "type", 4))) {
-                const char *a = p + wl;
-                while (*a == ' ' || *a == '\t')
-                    a++;
-                if (nasm_isidstart(*a)) {
-                    const char *ns = a;
-                    while (nasm_isidchar(*a) || *a == '.')
+            /* SIZEOF name / TYPE name  ->  name_size
+             * MASK field -> MASK_field ; WIDTH field -> WIDTH_field (RECORD) */
+            {
+                const char *pre = NULL;
+                if      (wl == 6 && !nasm_strnicmp(p, "sizeof", 6)) pre = "";
+                else if (wl == 4 && !nasm_strnicmp(p, "type",   4)) pre = "";
+                else if (wl == 4 && !nasm_strnicmp(p, "mask",   4)) pre = "MASK_";
+                else if (wl == 5 && !nasm_strnicmp(p, "width",  5)) pre = "WIDTH_";
+                if (pre) {
+                    const char *a = p + wl;
+                    while (*a == ' ' || *a == '\t')
                         a++;
-                    o += sprintf(o, "%.*s_size", (int)(a - ns), ns);
-                    p = a;
-                    changed = true;
-                    continue;
+                    if (nasm_isidstart(*a)) {
+                        const char *ns = a;
+                        while (nasm_isidchar(*a) || *a == '.')
+                            a++;
+                        if (pre[0])             /* MASK_field / WIDTH_field */
+                            o += sprintf(o, "%s%.*s", pre, (int)(a - ns), ns);
+                        else                    /* name_size */
+                            o += sprintf(o, "%.*s_size", (int)(a - ns), ns);
+                        p = a;
+                        changed = true;
+                        continue;
+                    }
                 }
             }
 
@@ -2120,6 +2133,78 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    if (l2 && !nasm_stricmp(w2, "record")) {
+        /*
+         * NAME RECORD f1:w1, f2:w2, ...   -- a bit-packed record.  Fields pack
+         * most-significant first; each field name is its shift count, MASK f is
+         * the field's bit mask, WIDTH f its width.  The whole record is a byte /
+         * word / dword by total width.
+         */
+        struct { char nm[64]; int w; } fld[32];
+        int nf = 0, total = 0, i, pos;
+        struct masm_sdef *sd;
+        const char *s = p;
+        while (*s && nf < 32) {
+            char nm[64]; size_t ni = 0; int w = 0;
+            while (*s == ' ' || *s == '\t' || *s == ',')
+                s++;
+            if (!nasm_isidstart(*s))
+                break;
+            while (nasm_isidchar(*s)) {
+                if (ni + 1 < sizeof nm) nm[ni++] = *s;
+                s++;
+            }
+            nm[ni] = '\0';
+            while (*s == ' ' || *s == '\t')
+                s++;
+            if (*s == ':') {
+                s++;
+                while (*s == ' ' || *s == '\t')
+                    s++;
+                w = atoi(s);
+                while (nasm_isdigit(*s))
+                    s++;
+            }
+            if (w <= 0)
+                break;
+            snprintf(fld[nf].nm, sizeof fld[nf].nm, "%s", nm);
+            fld[nf].w = w;
+            total += w;
+            nf++;
+        }
+        nasm_new(sd);
+        sd->name = nasm_strdup(w1);
+        sd->is_record = true;
+        sd->rdir = total <= 8 ? "db" : total <= 16 ? "dw" : "dd";
+        pos = total;
+        for (i = 0; i < nf; i++) {
+            struct masm_smember *mb;
+            int width = fld[i].w;
+            unsigned mask;
+            pos -= width;
+            mask = (width >= 32 ? 0xffffffffu : ((1u << width) - 1)) << pos;
+            snprintf(tmp, sizeof tmp, "%%define %s %d", fld[i].nm, pos);
+            masm_ppq_add(nasm_strdup(tmp));
+            snprintf(tmp, sizeof tmp, "%%define MASK_%s 0%08Xh", fld[i].nm, mask);
+            masm_ppq_add(nasm_strdup(tmp));
+            snprintf(tmp, sizeof tmp, "%%define WIDTH_%s %d", fld[i].nm, width);
+            masm_ppq_add(nasm_strdup(tmp));
+            nasm_new(mb);
+            mb->name = nasm_strdup(fld[i].nm);
+            mb->shift = pos;
+            mb->count = 1;
+            if (sd->tail) sd->tail->next = mb; else sd->head = mb;
+            sd->tail = mb;
+        }
+        snprintf(tmp, sizeof tmp, "%%define %s_size %d", w1,
+                 total <= 8 ? 1 : total <= 16 ? 2 : 4);
+        masm_ppq_add(nasm_strdup(tmp));
+        sd->next = masm_sdefs;
+        masm_sdefs = sd;
+        nasm_free(line);
+        return masm_ppq_get();
+    }
+
     if (l2 && !nasm_stricmp(w2, "catstr")) {
         /* NAME CATSTR a,b,...  -> concatenate the text of the args (angle
          * brackets stripped, joined with %+ so macro args expand and paste). */
@@ -2284,6 +2369,35 @@ static char *masm_pp_xform(char *line)
             }
             d[n] = '\0';
             ninit++;                            /* count the last field */
+        }
+
+        if (sd->is_record) {
+            /* pack the fields into one integer: label <dir> (i<<sh)|... */
+            char rhs[512];
+            size_t ri = 0;
+            int first = 1;
+            for (mb = sd->head, mi = 0; mb; mb = mb->next, mi++) {
+                char val[192];
+                const char *v = "0";
+                if (mi < ninit) {
+                    char *b = inits[mi];
+                    while (*b == ' ' || *b == '\t') b++;
+                    snprintf(val, sizeof val, "%s", b);
+                    { size_t e = strlen(val);
+                      while (e && (val[e-1]==' '||val[e-1]=='\t'||val[e-1]=='\r'))
+                          val[--e] = '\0'; }
+                    if (val[0]) v = val;
+                }
+                ri += snprintf(rhs + ri, ri < sizeof rhs ? sizeof rhs - ri : 0,
+                               "%s((%s) << %d)", first ? "" : " | ", v, mb->shift);
+                first = 0;
+            }
+            if (first)                          /* no fields: emit 0 */
+                snprintf(rhs, sizeof rhs, "0");
+            snprintf(tmp, sizeof tmp, "%s\t%s %s", w1, sd->rdir, rhs);
+            masm_ppq_add(nasm_strdup(tmp));
+            nasm_free(line);
+            return masm_ppq_get();
         }
 
         snprintf(tmp, sizeof tmp, "%s:", w1);
