@@ -16,6 +16,22 @@
 
 USE: masm
 
+;; Built-in type sizes, so TYPE/SIZEOF of a primitive resolves to a number
+;; (the C front-end rewrites `TYPE t' / `SIZEOF t' -> `t_size').  STRUCT sizes
+;; (`STRUCT_size') come from NASM's own `struc' machinery.
+%define BYTE_size   1
+%define SBYTE_size  1
+%define WORD_size   2
+%define SWORD_size  2
+%define DWORD_size  4
+%define SDWORD_size 4
+%define FWORD_size  6
+%define QWORD_size  8
+%define TBYTE_size  10
+%define REAL4_size  4
+%define REAL8_size  8
+%define REAL10_size 10
+
 %unimacro segment 1+
 
 ;; MASM: `NAME segment [align] [combine] [useNN] ['class']`.  Switch to a NASM

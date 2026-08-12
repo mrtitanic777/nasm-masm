@@ -1592,10 +1592,17 @@ static const char *masm_type_to_res(const char *t)
 }
 
 /*
- * Rewrite struct member access and SIZEOF in an instruction line:
- *   [reg].STRUCT.member  ->  [reg + STRUCT.member]   (NASM struc offset)
- *   SIZEOF name          ->  name_size
- * (TYPE, PTR and friends are deferred to B9.)
+ * Rewrite MASM struct-member access and prefix expression operators in an
+ * instruction line (B3 + B9):
+ *   [reg].STRUCT.member  ->  [reg + STRUCT.member]     (NASM struc offset)
+ *   SIZEOF name / TYPE name  ->  name_size             (structs + primitives;
+ *                                                       *_size defined in the
+ *                                                       package / by `struc')
+ *   LOW  x   ->  ((x) & 0FFh)          HIGH x     ->  ((x >> 8) & 0FFh)
+ *   LOWWORD x -> ((x) & 0FFFFh)        HIGHWORD x ->  ((x >> 16) & 0FFFFh)
+ * (Radix suffixes 1010b / 17q / 0Ah are native NASM; PTR is handled in the
+ * parser.  TYPE of a *variable* is deferred - it would need the var's type as
+ * a preprocessor symbol.)
  * Returns line unchanged, or a freshly allocated rewritten line (line freed).
  */
 static char *masm_rewrite_line(char *line)
@@ -1605,11 +1612,7 @@ static char *masm_rewrite_line(char *line)
     size_t cap;
     bool changed = false;
 
-    if (!strstr(line, "].") &&
-        !strstr(line, "SIZEOF") && !strstr(line, "sizeof"))
-        return line;
-
-    cap = strlen(line) * 2 + 64;
+    cap = strlen(line) * 4 + 128;       /* operator wraps can expand the line */
     out = nasm_malloc(cap);
     o = out;
 
@@ -1625,13 +1628,15 @@ static char *masm_rewrite_line(char *line)
             changed = true;
             continue;
         }
-        /* SIZEOF name / TYPE name  ->  name_size */
-        if ((nasm_isidstart(*p)) &&
+        /* An identifier at a word boundary: maybe a prefix operator. */
+        if (nasm_isidstart(*p) &&
             (p == line || (!nasm_isidchar(p[-1]) && p[-1] != '.'))) {
-            const char *w = p;
             size_t wl = 0;
-            while (nasm_isidchar(w[wl]))
+            const char *pre = NULL, *post = NULL;
+            while (nasm_isidchar(p[wl]))
                 wl++;
+
+            /* SIZEOF name / TYPE name  ->  name_size */
             if ((wl == 6 && !nasm_strnicmp(p, "sizeof", 6)) ||
                 (wl == 4 && !nasm_strnicmp(p, "type", 4))) {
                 const char *a = p + wl;
@@ -1647,7 +1652,42 @@ static char *masm_rewrite_line(char *line)
                     continue;
                 }
             }
-            /* copy the whole identifier verbatim (don't re-scan inside it) */
+
+            /* LOW/HIGH/LOWWORD/HIGHWORD expr  ->  masked expression */
+            if      (wl == 7 && !nasm_strnicmp(p, "lowword", 7))
+                { pre = "(("; post = ") & 0FFFFh)"; }
+            else if (wl == 8 && !nasm_strnicmp(p, "highword", 8))
+                { pre = "(("; post = " >> 16) & 0FFFFh)"; }
+            else if (wl == 3 && !nasm_strnicmp(p, "low", 3))
+                { pre = "(("; post = ") & 0FFh)"; }
+            else if (wl == 4 && !nasm_strnicmp(p, "high", 4))
+                { pre = "(("; post = " >> 8) & 0FFh)"; }
+            if (pre) {
+                const char *a = p + wl;
+                const char *ts;
+                while (*a == ' ' || *a == '\t')
+                    a++;
+                ts = a;
+                if (*a == '(') {            /* balanced parenthesised term */
+                    int d = 0;
+                    do {
+                        if (*a == '(') d++;
+                        else if (*a == ')') d--;
+                        a++;
+                    } while (*a && d > 0);
+                } else {                    /* identifier or numeric literal */
+                    while (nasm_isidchar(*a) || *a == '.' || *a == '$')
+                        a++;
+                }
+                if (a > ts) {
+                    o += sprintf(o, "%s%.*s%s", pre, (int)(a - ts), ts, post);
+                    p = a;
+                    changed = true;
+                    continue;
+                }
+            }
+
+            /* not an operator: copy the whole identifier verbatim */
             memcpy(o, p, wl);
             o += wl;
             p += wl;
