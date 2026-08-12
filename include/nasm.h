@@ -502,6 +502,7 @@ extern struct strlist *depend_list;
 
 /* TASM mode changes some properties */
 extern bool tasm_compatible_mode;
+extern bool masm_mode;          /* --masm: MASM 6.x source compatibility */
 
 /*
  * inline function to skip past an identifier; returns the first character past

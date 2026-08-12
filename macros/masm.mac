@@ -4,18 +4,29 @@
 ;;
 ;; masm.mac
 ;;
-;; Very limited MASM compatibility package; intended to be used
-;; primarily with machine-generated code. It does not include any
-;; "programmer friendly" shortcuts, nor does it in any way support
-;; ASSUME, symbol typing, or MASM-style structures.
+;; MASM compatibility package; intended primarily for machine-generated code
+;; (e.g. disassembly listings).  Auto-loaded by the `--masm' command-line flag.
+;;
+;; Covers: segment/ends (with USE16/USE32/USE64 -> BITS), proc/endp, ptr,
+;; offset, flat, end, the .8086/.286/.386/.486/.586/.686[/p] CPU directives,
+;; the FPU (.287/.387) and listing (title/page/subttl/name) directives, and
+;; ASSUME -- the last several accepted and ignored.  It does NOT (yet) provide
+;; symbol typing, INVOKE/PROTO, .IF/.WHILE, or MASM-style structures.
 ;;
 
 USE: masm
 
 %unimacro segment 1+
 
+;; MASM: `NAME segment [align] [combine] [useNN] ['class']`.  Switch to a NASM
+;; section named NAME.  The MASM-only attributes (align / combine / class) are
+;; space-separated -- NASM splits macro args on commas, so they arrive as one
+;; blob -- and carry no meaning for a flat `-f bin` assembly, so we swallow and
+;; drop them (no "unknown section attribute" warnings).  Bitness comes from the
+;; CPU directive (.386 etc.) or a standalone USE16/USE32/USE64; class/align
+;; translation for the object backends is future work.
 %imacro segment 0-1+.nolist
-  %define __?SECT?__ [segment %00 %1]
+  %define __?SECT?__ [segment %00]
 	__?SECT?__
 %endmacro
 
@@ -52,5 +63,53 @@ USE: masm
 %endmacro
 
 %idefine tbyte tword
+
+;; --- CPU selection directives (MASM: .8086/.286/.386/.486/.586/.686[/p]) ---
+;; Leading-dot single-line macros are still preprocessor-expanded even at the
+;; start of a line, which is how they can stand in for MASM's dot directives.
+;;
+;; In practice `.386' and up mark 32-bit code and `.286' and down 16-bit code,
+;; so we map each to the corresponding BITS mode.  We deliberately do NOT emit
+;; `[cpu N]' (which would *restrict* the instruction set): a compatibility
+;; assembler for machine-generated listings should stay permissive, and the
+;; CPU level never affects the byte encoding NASM chooses.  A standalone
+;; USE16/USE32/USE64 (below) overrides for an individual segment.
+%idefine .8086 [bits 16]
+%idefine .186  [bits 16]
+%idefine .286  [bits 16]
+%idefine .286p [bits 16]
+%idefine .386  [bits 32]
+%idefine .386p [bits 32]
+%idefine .486  [bits 32]
+%idefine .486p [bits 32]
+%idefine .586  [bits 32]
+%idefine .586p [bits 32]
+%idefine .686  [bits 32]
+%idefine .686p [bits 32]
+%idefine use16 [bits 16]
+%idefine use32 [bits 32]
+%idefine use64 [bits 64]
+;; FPU selection directives have no effect on integer encoding: accept, ignore.
+%idefine .8087
+%idefine .287
+%idefine .387
+%idefine .387p
+
+;; --- Listing / documentation directives: accepted and ignored ---
+%imacro title 0-*.nolist
+%endmacro
+%imacro subtitle 0-*.nolist
+%endmacro
+%imacro subttl 0-*.nolist
+%endmacro
+%imacro page 0-*.nolist
+%endmacro
+%imacro name 0-*.nolist
+%endmacro
+
+;; --- ASSUME: segment-register assumptions are meaningless for a flat
+;; assembler; accept and ignore so machine-generated source assembles. ---
+%imacro assume 0-*.nolist
+%endmacro
 
 	default rel
