@@ -205,6 +205,7 @@ USE: masm
 %define __?MASM_BRK?__          ; current loop's .BREAK target
 %define __?MASM_CNT?__          ; current loop's .CONTINUE target
 %assign __?MASM_LOOPN?__ 0      ; global loop counter (for break/continue labels)
+%assign __?MASM_IFN?__ 0        ; global .IF counter (for skip/done labels)
 
 ;; Define one parameter "name:type" as a DWORD [ebp+off] equate.
 %imacro __?masm_defparam?__ 2.nolist
@@ -451,7 +452,11 @@ USE: masm
 ;; context stack.  (Signed operands, && / ||, and .ELSEIF are future work.)
 
 ;; op: 1:==  2:!=  3:>  4:<  5:>=  6:<=   ; emit the jump for (op, jumpwhentrue).
-%imacro __?masm_jcc?__ 3.nolist
+;; Emit the conditional jump for relational op %1 to target %3, taken when the
+;; comparison is (%2 ? true : false).  %4 selects signed (jg/jl/...) vs the
+;; default unsigned (ja/jb/...) forms -- ML uses unsigned unless an operand is
+;; cast signed (SDWORD PTR et al).  == and != are sign-agnostic.
+%imacro __?masm_jcc?__ 4.nolist
   %if %1==1
     %if %2
       je %3
@@ -464,30 +469,73 @@ USE: masm
     %else
       je %3
     %endif
-  %elif %1==3
-    %if %2
-      ja %3
+  %elif %1==3                           ; >
+    %if %4
+      %if %2
+        jg %3
+      %else
+        jle %3
+      %endif
     %else
-      jbe %3
+      %if %2
+        ja %3
+      %else
+        jbe %3
+      %endif
     %endif
-  %elif %1==4
-    %if %2
-      jb %3
+  %elif %1==4                           ; <
+    %if %4
+      %if %2
+        jl %3
+      %else
+        jge %3
+      %endif
     %else
-      jae %3
+      %if %2
+        jb %3
+      %else
+        jae %3
+      %endif
     %endif
-  %elif %1==5
-    %if %2
-      jae %3
+  %elif %1==5                           ; >=
+    %if %4
+      %if %2
+        jge %3
+      %else
+        jl %3
+      %endif
     %else
-      jb %3
+      %if %2
+        jae %3
+      %else
+        jb %3
+      %endif
     %endif
-  %elif %1==6
-    %if %2
-      jbe %3
+  %elif %1==6                           ; <=
+    %if %4
+      %if %2
+        jle %3
+      %else
+        jg %3
+      %endif
     %else
-      ja %3
+      %if %2
+        jbe %3
+      %else
+        ja %3
+      %endif
     %endif
+  %endif
+%endmacro
+
+;; Emit a direct flag test jump for the MASM flag conditions (CARRY?/ZERO?/
+;; SIGN?/OVERFLOW?/PARITY?): %1 the jump when the flag is set, %2 when clear,
+;; %3 the taken-direction sense, %4 the target.
+%imacro __?masm_fj?__ 4.nolist
+  %if %3
+    %1 %4
+  %else
+    %2 %4
   %endif
 %endmacro
 
@@ -495,8 +543,92 @@ USE: masm
 ;; (%3 ? true : false).  Operands are single tokens (reg/imm); memory operands
 ;; and boolean combinators are future work.
 %imacro __?masm_jcond?__ 3.nolist
+  ;; --- flag conditions: .IF CARRY?/ZERO?/SIGN?/OVERFLOW?/PARITY? (opt. `!') ---
+  %assign %%isflag 1
+  %ifidni %1, CARRY?
+    __?masm_fj?__ jc, jnc, %3, %2
+  %elifidni %1, !CARRY?
+    __?masm_fj?__ jnc, jc, %3, %2
+  %elifidni %1, ZERO?
+    __?masm_fj?__ jz, jnz, %3, %2
+  %elifidni %1, !ZERO?
+    __?masm_fj?__ jnz, jz, %3, %2
+  %elifidni %1, SIGN?
+    __?masm_fj?__ js, jns, %3, %2
+  %elifidni %1, !SIGN?
+    __?masm_fj?__ jns, js, %3, %2
+  %elifidni %1, OVERFLOW?
+    __?masm_fj?__ jo, jno, %3, %2
+  %elifidni %1, !OVERFLOW?
+    __?masm_fj?__ jno, jo, %3, %2
+  %elifidni %1, PARITY?
+    __?masm_fj?__ jp, jnp, %3, %2
+  %elifidni %1, !PARITY?
+    __?masm_fj?__ jnp, jp, %3, %2
+  %else
+    %assign %%isflag 0
+  %endif
+  %if %%isflag == 0
   %defstr %%s %1
   %strlen %%n %%s
+  ;; --- signed cast: a leading SBYTE/SWORD/SDWORD PTR selects signed jumps and
+  ;; is stripped from the comparison (it is a hint, not a real operand). ---
+  %assign %%signed 0
+  %assign %%sw 1                        ; length of the first whitespace-run word
+  %rep %%n
+    %substr %%c %%s %%sw
+    %ifidn %%c, ' '
+      %exitrep
+    %endif
+    %assign %%sw %%sw+1
+  %endrep
+  %substr %%fw %%s 1,%%sw-1
+  %ifidni %%fw, 'sbyte'
+    %assign %%signed 1
+  %elifidni %%fw, 'sword'
+    %assign %%signed 1
+  %elifidni %%fw, 'sdword'
+    %assign %%signed 1
+  %endif
+  %if %%signed
+    ;; skip the cast word and a following PTR word
+    %assign %%adv %%sw
+    %rep %%n                            ; skip spaces after the type word
+      %substr %%c %%s %%adv
+      %ifidn %%c, ' '
+        %assign %%adv %%adv+1
+      %else
+        %exitrep
+      %endif
+    %endrep
+    ;; next word is PTR -- but `ptr' is pre-expanded to __?masm_ptr?__ before we
+    ;; ever see the condition, so match the expanded form too.
+    %assign %%pe %%adv
+    %rep %%n
+      %substr %%c %%s %%pe
+      %ifidn %%c, ' '
+        %exitrep
+      %endif
+      %assign %%pe %%pe+1
+    %endrep
+    %substr %%pw %%s %%adv,%%pe-%%adv
+    %ifidni %%pw, '__?masm_ptr?__'
+      %assign %%adv %%pe
+    %elifidni %%pw, 'ptr'
+      %assign %%adv %%pe
+    %endif
+    %rep %%n                            ; spaces after PTR
+      %substr %%c %%s %%adv
+      %ifidn %%c, ' '
+        %assign %%adv %%adv+1
+      %else
+        %exitrep
+      %endif
+    %endrep
+    %substr %%s2 %%s %%adv,%%n-%%adv+1   ; strip via a temp (in-place %substr is unsafe)
+    %strlen %%n %%s2
+    %substr %%s %%s2 1,%%n
+  %endif
   %assign %%op 0
   %assign %%pos 0
   %assign %%ol 0
@@ -580,25 +712,41 @@ USE: masm
       %endif
     %else
       cmp %%L, %%R
-      __?masm_jcc?__ %%op, %3, %2
+      __?masm_jcc?__ %%op, %3, %2, %%signed
     %endif
   %endif
+  %endif                                ; close `%if %%isflag == 0'
 %endmacro
 
+;; .IF / .ELSEIF / .ELSE / .ENDIF.  Each arm skips to a freshly minted label
+;; when its condition is false; a closing arm jumps to the shared done label.
+;; Skip/done labels are global (minted from __?MASM_IFN?__) so a nested .IF or a
+;; multi-token condition can't collide with the context-local machinery.
 %imacro .if 1-*.nolist
   %push masmif
-  __?masm_jcond?__ %1, %$ifnot, 0       ; skip the body when the condition is false
+  %assign __?MASM_IFN?__ __?MASM_IFN?__+1
+  %xdefine %$done __?masm_ifd%[__?MASM_IFN?__]
+  %assign __?MASM_IFN?__ __?MASM_IFN?__+1
+  %xdefine %$skip __?masm_ifs%[__?MASM_IFN?__]
+  __?masm_jcond?__ %1, %$skip, 0        ; skip the body when the condition is false
+%endmacro
+%imacro .elseif 1-*.nolist
+  jmp %$done                            ; end of the previous arm's body
+  %$skip:                               ; the previous condition's false target
+  %assign __?MASM_IFN?__ __?MASM_IFN?__+1
+  %xdefine %$skip __?masm_ifs%[__?MASM_IFN?__]
+  __?masm_jcond?__ %1, %$skip, 0
 %endmacro
 %imacro .else 0.nolist
-  jmp %$ifdone
-  %$ifnot:
+  jmp %$done
+  %$skip:
   %define %$haselse
 %endmacro
 %imacro .endif 0.nolist
   %ifndef %$haselse
-    %$ifnot:
+    %$skip:
   %endif
-  %$ifdone:
+  %$done:
   %pop
 %endmacro
 
