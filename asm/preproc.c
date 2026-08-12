@@ -1581,6 +1581,19 @@ static size_t masm_word(const char **pp, char *buf, size_t bufsz)
 
 static int masm_type_bytes(const char *t);   /* defined below */
 
+/* True if s is a single identifier (letters/digits/_.?$), trailing space aside. */
+static bool masm_ident_only(const char *s)
+{
+    const char *p = s;
+    if (!nasm_isidstart(*p) && *p != '?')
+        return false;
+    while (nasm_isidchar(*p) || *p == '.' || *p == '?' || *p == '$')
+        p++;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+        p++;
+    return *p == '\0';
+}
+
 /* A MASM conditional-assembly keyword (so it is never a STRUC member line). */
 static bool masm_is_cond(const char *w)
 {
@@ -2177,6 +2190,36 @@ static char *masm_pp_xform(char *line)
             if (!uni)
                 masm_ppq_add(nasm_strdup("endstruc"));
             return masm_ppq_get();
+        }
+        {
+            /*
+             * An anonymous member is a bare data directive (`DB 21 DUP(?)') --
+             * padding with no name.  Reserve the space, no field symbol.
+             */
+            const char *ares = masm_type_to_res(w1);
+            if (ares) {
+                int acount = 1, aesz = masm_type_bytes(w1);
+                const char *ap = p;
+                while (*ap == ' ' || *ap == '\t')
+                    ap++;
+                if (nasm_isdigit(*ap)) {
+                    int n = atoi(ap);
+                    const char *dp = ap;
+                    while (nasm_isdigit(*dp)) dp++;
+                    while (*dp == ' ' || *dp == '\t') dp++;
+                    if (n > 0 && !nasm_strnicmp(dp, "dup", 3)) acount = n;
+                }
+                if (masm_sdef_cur && masm_sdef_cur->is_union &&
+                    aesz * acount > masm_sdef_cur->usize)
+                    masm_sdef_cur->usize = aesz * acount;
+                if (masm_sdef_cur && masm_sdef_cur->is_union)
+                    snprintf(tmp, sizeof tmp, ";");         /* union: no advance */
+                else
+                    snprintf(tmp, sizeof tmp, "resb %d", aesz * acount);
+                nasm_free(line);
+                masm_ppq_add(nasm_strdup(tmp));
+                return masm_ppq_get();
+            }
         }
         if (mtl) {
             const char *res = masm_type_to_res(mtype);
@@ -2942,14 +2985,29 @@ static char *masm_pp_xform(char *line)
             return masm_ppq_get();
         }
         {
-            /* NAME EQU <size> PTR expr -- a typed offset alias; drop the cast. */
-            const char *stripped = masm_skip_typeptr(v);
-            if (stripped != v) {
-                snprintf(tmp, sizeof tmp, "%s equ %s", w1, stripped);
-                nasm_free(line);
-                masm_ppq_add(nasm_strdup(tmp));
-                return masm_ppq_get();
-            }
+            /*
+             * NAME EQU expr.  Drop a leading <size> PTR cast, translate MASM
+             * word operators (or/and/...), then hand to NASM's `equ'.  The one
+             * exception is a bare size keyword (`RSHORT EQU short'): NASM's equ
+             * rejects it, so alias it with %define.  A general lone-identifier
+             * equate is left as `equ' -- %define there risks a definition cycle
+             * (a redefinable/forward equate referencing itself), which hangs the
+             * preprocessor.
+             */
+            char ex[512], *xr;
+            masm_xlat_ops(ex, sizeof ex, masm_skip_typeptr(v));
+            xr = ex;
+            while (*xr == ' ' || *xr == '\t')
+                xr++;
+            if (masm_ident_only(xr) &&
+                (!nasm_stricmp(xr, "short") || !nasm_stricmp(xr, "near") ||
+                 !nasm_stricmp(xr, "far")))
+                snprintf(tmp, sizeof tmp, "%%define %s %s", w1, xr);
+            else
+                snprintf(tmp, sizeof tmp, "%s equ %s", w1, xr);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
         }
     }
 
