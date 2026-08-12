@@ -10338,6 +10338,19 @@ static Token *pp_tokline(void)
              * directive so we keep our place correctly.
              */
             delete_tlist(tline);
+        } else if (masm_mode) {
+            /*
+             * MASM passes multi-line-macro arguments as unexpanded TEXT (a
+             * defined symbol used as an argument stays its name, not its value).
+             * So try to expand a macro on the raw tokens first; only when the
+             * line is not a macro call do we expand single-line macros (needed
+             * for an ordinary instruction line) and retry.
+             */
+            if (!expand_mmacro(tline)) {
+                tline = expand_smacro(tline);
+                if (!expand_mmacro(tline))
+                    return tline;
+            }
         } else {
             tline = expand_smacro(tline);
             if (!expand_mmacro(tline))
