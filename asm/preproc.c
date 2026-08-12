@@ -1904,6 +1904,30 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    if (!nasm_stricmp(w1, "include")) {
+        /* MASM `include file' (bare, unquoted)  ->  NASM %include "file". */
+        const char *f = p;
+        char fn[256];
+        size_t fl;
+        while (*f == ' ' || *f == '\t')
+            f++;
+        snprintf(fn, sizeof fn, "%s", f);
+        fl = strlen(fn);
+        while (fl && (fn[fl-1]==' '||fn[fl-1]=='\t'||fn[fl-1]=='\r'||fn[fl-1]=='\n'))
+            fn[--fl] = '\0';
+        if (fl) {
+            snprintf(tmp, sizeof tmp, "%%include \"%s\"", fn);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
+        }
+    }
+
+    if (!nasm_stricmp(w1, "includelib")) {
+        nasm_free(line);            /* link-time detail; accepted and dropped */
+        return nasm_strdup("");
+    }
+
     if (!nasm_stricmp(w1, "bits")) {
         /*
          * A raw `bits N' (rather than .386/.MODEL) must also update the struc-
