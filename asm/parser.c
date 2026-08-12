@@ -710,6 +710,28 @@ static inline opflags_t set_imm_flags(struct operand *op, enum optimization opt)
     return op->type;
 }
 
+/*
+ * The x86 string instructions. MASM lets these be written with explicit
+ * "documentation" operands (e.g. `stosd dword ptr es:[edi], eax'); NASM's
+ * mnemonics take none (esi/edi/eax/dx are implicit). Used by parse_line() to
+ * strip such operands under --masm.
+ */
+static bool masm_is_string_op(enum opcode op)
+{
+    switch (op) {
+    case I_MOVSB: case I_MOVSW: case I_MOVSD: case I_MOVSQ:
+    case I_STOSB: case I_STOSW: case I_STOSD: case I_STOSQ:
+    case I_LODSB: case I_LODSW: case I_LODSD: case I_LODSQ:
+    case I_SCASB: case I_SCASW: case I_SCASD: case I_SCASQ:
+    case I_CMPSB: case I_CMPSW: case I_CMPSD: case I_CMPSQ:
+    case I_INSB:  case I_INSW:  case I_INSD:
+    case I_OUTSB: case I_OUTSW: case I_OUTSD:
+        return true;
+    default:
+        return false;
+    }
+}
+
 insn *parse_line(char *buffer, insn *result, const int bits)
 {
     bool insn_is_label = false;
@@ -1423,6 +1445,33 @@ restart_parse:
     }
 
     result->operands = opnum; /* set operand count */
+
+    /*
+     * MASM lets the string instructions carry documentation operands, e.g.
+     * `stosd dword ptr es:[edi], eax' or `movsd es:[edi], [esi]'. NASM's string
+     * mnemonics take none, so under --masm accept and drop them and encode the
+     * implicit form. MOVSD/CMPSD are also SSE mnemonics, so only strip when no
+     * operand is an XMM register. (A non-default *source* segment override would
+     * need a prefix, but the disassembly corpus emits those as `db' -- every
+     * mnemonic-form string op there uses the default segment.)
+     */
+    if (masm_mode && opnum > 0 && masm_is_string_op(result->opcode)) {
+        bool sse = false;
+        int k;
+        for (k = 0; k < opnum; k++)
+            sse |= is_class(XMMREG, result->oprs[k].type);
+        if (!sse) {
+            result->operands = 0;
+            /*
+             * The operands documented the implied segments (ES for the
+             * destination, DS for the source), which emit no prefix. Drop the
+             * segment override captured from e.g. `es:[edi]' so we encode the
+             * bare string op. (A non-default source override is a `db' in the
+             * corpus, never a mnemonic form, so this never discards a real one.)
+             */
+            result->prefixes[PPS_SEG] = P_none;
+        }
+    }
 
     return result;
 
