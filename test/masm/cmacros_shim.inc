@@ -165,3 +165,26 @@
 
 ;; cProcVDO -- a cProc variant used by some kernel modules; same frame here.
 %idefine cProcVDO cProc
+
+;; ---- misc cmacros helpers ----
+;; outif flag [, default [, msg]] -- define flag to default if unset, then
+;; normalise to 0/1.  (Arguments are textual under --masm, so the flag NAME is
+;; passed even when it is already defined.)
+%imacro outif 1-*
+    %ifndef %1
+        %if %0 >= 2
+            %assign %1 %2
+        %else
+            %assign %1 0
+        %endif
+    %endif
+    %if %1
+        %assign %1 1
+    %endif
+%endmacro
+
+;; errnz <expr> / errnz expr -- assemble-time assertion (error if nonzero).
+%imacro errnz 1-*
+%endmacro
+%imacro errn$ 1-*
+%endmacro
