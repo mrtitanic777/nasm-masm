@@ -539,42 +539,37 @@ USE: masm
   %endif
 %endmacro
 
-;; Lower condition %1 to CMP/TEST + a jump to %2 taken when the condition is
-;; (%3 ? true : false).  Operands are single tokens (reg/imm); memory operands
-;; and boolean combinators are future work.
-%imacro __?masm_jcond?__ 3.nolist
-  ;; --- flag conditions: .IF CARRY?/ZERO?/SIGN?/OVERFLOW?/PARITY? (opt. `!') ---
-  %assign %%isflag 1
-  %ifidni %1, CARRY?
-    __?masm_fj?__ jc, jnc, %3, %2
-  %elifidni %1, !CARRY?
-    __?masm_fj?__ jnc, jc, %3, %2
-  %elifidni %1, ZERO?
-    __?masm_fj?__ jz, jnz, %3, %2
-  %elifidni %1, !ZERO?
-    __?masm_fj?__ jnz, jz, %3, %2
-  %elifidni %1, SIGN?
-    __?masm_fj?__ js, jns, %3, %2
-  %elifidni %1, !SIGN?
-    __?masm_fj?__ jns, js, %3, %2
-  %elifidni %1, OVERFLOW?
-    __?masm_fj?__ jo, jno, %3, %2
-  %elifidni %1, !OVERFLOW?
-    __?masm_fj?__ jno, jo, %3, %2
-  %elifidni %1, PARITY?
-    __?masm_fj?__ jp, jnp, %3, %2
-  %elifidni %1, !PARITY?
-    __?masm_fj?__ jnp, jp, %3, %2
-  %else
-    %assign %%isflag 0
-  %endif
-  %if %%isflag == 0
-  %defstr %%s %1
-  %strlen %%n %%s
-  ;; --- signed cast: a leading SBYTE/SWORD/SDWORD PTR selects signed jumps and
-  ;; is stripped from the comparison (it is a hint, not a real operand). ---
+;; Lower a single relational term (quoted string %1, e.g. "eax > 5", or a bare
+;; value) to CMP/TEST + a jump to %2 taken when the term is (%3 ? true : false).
+;; A leading SBYTE/SWORD/SDWORD PTR selects the signed jumps and is stripped.
+%imacro __?masm_cmpjmp?__ 3.nolist
+  %strlen %%n %1
+  %substr %%s %1 1,%%n
+  ;; trim leading/trailing spaces (terms arrive with the surrounding whitespace)
+  %assign %%a 1
+  %rep %%n
+    %substr %%c %%s %%a
+    %ifidn %%c,' '
+      %assign %%a %%a+1
+    %else
+      %exitrep
+    %endif
+  %endrep
+  %assign %%b %%n
+  %rep %%n
+    %substr %%c %%s %%b
+    %ifidn %%c,' '
+      %assign %%b %%b-1
+    %else
+      %exitrep
+    %endif
+  %endrep
+  %substr %%s2 %%s %%a,%%b-%%a+1
+  %strlen %%n %%s2
+  %substr %%s %%s2 1,%%n
+  ;; --- signed cast: strip a leading SBYTE/SWORD/SDWORD PTR, select signed ---
   %assign %%signed 0
-  %assign %%sw 1                        ; length of the first whitespace-run word
+  %assign %%sw 1
   %rep %%n
     %substr %%c %%s %%sw
     %ifidn %%c, ' '
@@ -591,9 +586,8 @@ USE: masm
     %assign %%signed 1
   %endif
   %if %%signed
-    ;; skip the cast word and a following PTR word
     %assign %%adv %%sw
-    %rep %%n                            ; skip spaces after the type word
+    %rep %%n
       %substr %%c %%s %%adv
       %ifidn %%c, ' '
         %assign %%adv %%adv+1
@@ -601,8 +595,7 @@ USE: masm
         %exitrep
       %endif
     %endrep
-    ;; next word is PTR -- but `ptr' is pre-expanded to __?masm_ptr?__ before we
-    ;; ever see the condition, so match the expanded form too.
+    ;; next word is PTR -- pre-expanded to __?masm_ptr?__ before we see it
     %assign %%pe %%adv
     %rep %%n
       %substr %%c %%s %%pe
@@ -617,7 +610,7 @@ USE: masm
     %elifidni %%pw, 'ptr'
       %assign %%adv %%pe
     %endif
-    %rep %%n                            ; spaces after PTR
+    %rep %%n
       %substr %%c %%s %%adv
       %ifidn %%c, ' '
         %assign %%adv %%adv+1
@@ -625,10 +618,11 @@ USE: masm
         %exitrep
       %endif
     %endrep
-    %substr %%s2 %%s %%adv,%%n-%%adv+1   ; strip via a temp (in-place %substr is unsafe)
+    %substr %%s2 %%s %%adv,%%n-%%adv+1
     %strlen %%n %%s2
     %substr %%s %%s2 1,%%n
   %endif
+  ;; --- relational operator scan ---
   %assign %%op 0
   %assign %%pos 0
   %assign %%ol 0
@@ -673,7 +667,7 @@ USE: masm
     %assign %%i %%i+1
   %endrep
   %if %%op == 0
-    %deftok %%L %1                      ; bare value: true iff nonzero
+    %deftok %%L %%s                     ; bare value: true iff nonzero
     test %%L, %%L
     %if %3
       jnz %2
@@ -715,7 +709,127 @@ USE: masm
       __?masm_jcc?__ %%op, %3, %2, %%signed
     %endif
   %endif
-  %endif                                ; close `%if %%isflag == 0'
+%endmacro
+
+;; Lower condition %1 to a jump to %2 taken when the condition is (%3 ? true :
+;; false).  Handles the MASM flag conditions, a single relational term, and
+;; boolean && / || with short-circuit evaluation (in the skip-when-false
+;; direction used by .IF/.ELSEIF).
+%imacro __?masm_jcond?__ 3.nolist
+  ;; --- flag conditions: .IF CARRY?/ZERO?/SIGN?/OVERFLOW?/PARITY? (opt. `!') ---
+  %assign %%isflag 1
+  %ifidni %1, CARRY?
+    __?masm_fj?__ jc, jnc, %3, %2
+  %elifidni %1, !CARRY?
+    __?masm_fj?__ jnc, jc, %3, %2
+  %elifidni %1, ZERO?
+    __?masm_fj?__ jz, jnz, %3, %2
+  %elifidni %1, !ZERO?
+    __?masm_fj?__ jnz, jz, %3, %2
+  %elifidni %1, SIGN?
+    __?masm_fj?__ js, jns, %3, %2
+  %elifidni %1, !SIGN?
+    __?masm_fj?__ jns, js, %3, %2
+  %elifidni %1, OVERFLOW?
+    __?masm_fj?__ jo, jno, %3, %2
+  %elifidni %1, !OVERFLOW?
+    __?masm_fj?__ jno, jo, %3, %2
+  %elifidni %1, PARITY?
+    __?masm_fj?__ jp, jnp, %3, %2
+  %elifidni %1, !PARITY?
+    __?masm_fj?__ jnp, jp, %3, %2
+  %else
+    %assign %%isflag 0
+  %endif
+  %if %%isflag == 0
+    %defstr %%s %1
+    %strlen %%n %%s
+    ;; scan for a top-level && or || combinator (single & is the bit-test op)
+    %assign %%comb 0
+    %assign %%i 1
+    %rep %%n
+      %substr %%c1 %%s %%i
+      %if %%i < %%n
+        %substr %%c2 %%s %%i+1
+      %else
+        %defstr %%c2 " "
+      %endif
+      %ifidn %%c1,'&'
+        %ifidn %%c2,'&'
+          %assign %%comb 1
+          %exitrep
+        %endif
+      %elifidn %%c1,'|'
+        %ifidn %%c2,'|'
+          %assign %%comb 2
+          %exitrep
+        %endif
+      %endif
+      %assign %%i %%i+1
+    %endrep
+    %if %%comb == 0
+      __?masm_cmpjmp?__ %%s, %2, %3
+    %elif %3 == 0
+      ;; AND: every term jumps to the skip label when false.
+      ;; OR:  every term but the last jumps into the body (a minted enter label)
+      ;;      when true; the last jumps to skip when false.
+      %if %%comb == 2
+        %assign __?MASM_IFN?__ __?MASM_IFN?__+1
+        %xdefine %%enter __?masm_ent%[__?MASM_IFN?__]
+      %endif
+      %assign %%start 1
+      %assign %%i 1
+      %assign %%reps %%n+2
+      %rep %%reps
+        %if %%start > %%n
+          %exitrep
+        %endif
+        %assign %%hit 0
+        %assign %%oplen 0
+        %if %%i > %%n
+          %assign %%hit 1
+        %else
+          %substr %%c1 %%s %%i
+          %if %%i < %%n
+            %substr %%c2 %%s %%i+1
+          %else
+            %defstr %%c2 " "
+          %endif
+          %ifidn %%c1,'&'
+            %ifidn %%c2,'&'
+              %assign %%hit 1
+              %assign %%oplen 2
+            %endif
+          %elifidn %%c1,'|'
+            %ifidn %%c2,'|'
+              %assign %%hit 1
+              %assign %%oplen 2
+            %endif
+          %endif
+        %endif
+        %if %%hit
+          %substr %%term %%s %%start,%%i-%%start
+          %if %%comb == 1
+            __?masm_cmpjmp?__ %%term, %2, 0
+          %elif %%i > %%n
+            __?masm_cmpjmp?__ %%term, %2, 0
+          %else
+            __?masm_cmpjmp?__ %%term, %%enter, 1
+          %endif
+          %assign %%start %%i+%%oplen
+          %assign %%i %%i+%%oplen
+        %else
+          %assign %%i %%i+1
+        %endif
+      %endrep
+      %if %%comb == 2
+        %%enter:
+      %endif
+    %else
+      ;; .WHILE/.UNTIL with a combinator: not yet -- lower as a single term
+      __?masm_cmpjmp?__ %%s, %2, %3
+    %endif
+  %endif
 %endmacro
 
 ;; .IF / .ELSEIF / .ELSE / .ENDIF.  Each arm skips to a freshly minted label
