@@ -58,6 +58,7 @@ real ML 6.11:
 | `hll_andor` | boolean `&&` (AND) / `||` (OR) with short-circuit lowering in `.IF` — `-Ox` = ML |
 | `hll_macro` | `MACRO`/`ENDM`, `REPT`, `TEXTEQU`, `=` (`= ML`) |
 | `hll_for` | `FOR`/`IRP` list iteration and `EXITM` (`= ML`) |
+| `hll_strfn` | string functions `SIZESTR`/`CATSTR`/`SUBSTR` (compile-time text → equates, `= ML`) |
 | `hll_cond` | `IF`/`IFE`/`IFDEF`/`IFNDEF`/`ELSE`/`ELSEIF`/`ENDIF` assembly-time conditionals (`= ML`) |
 | `hll_ifb` | `IFB`/`IFNB`, `IFIDN`/`IFDIF` text conditionals, optional macro params (`= ML`) |
 | `hll_struct` | `STRUCT`/`ENDS` (incl. `DUP` arrays, nested), `[reg].STRUCT.member`, `SIZEOF STRUCT` (`= ML`) |

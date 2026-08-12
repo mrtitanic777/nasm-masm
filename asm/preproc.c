@@ -2120,6 +2120,99 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    if (l2 && !nasm_stricmp(w2, "catstr")) {
+        /* NAME CATSTR a,b,...  -> concatenate the text of the args (angle
+         * brackets stripped, joined with %+ so macro args expand and paste). */
+        char rhs[512];
+        size_t ri = 0;
+        const char *s = p;
+        int depth = 0, first = 1;
+        while (*s == ' ' || *s == '\t')
+            s++;
+        while (*s) {
+            if (*s == '<') { depth++; s++; continue; }
+            if (*s == '>') { if (depth) depth--; s++; continue; }
+            if (*s == ',' && depth == 0) {          /* arg separator */
+                if (ri + 4 < sizeof rhs) {
+                    rhs[ri++] = ' '; rhs[ri++] = '%'; rhs[ri++] = '+'; rhs[ri++] = ' ';
+                }
+                first = 0;
+                s++;
+                while (*s == ' ' || *s == '\t')
+                    s++;
+                continue;
+            }
+            if (ri + 1 < sizeof rhs)
+                rhs[ri++] = *s;
+            s++;
+        }
+        (void)first;
+        rhs[ri] = '\0';
+        snprintf(tmp, sizeof tmp, "%%xdefine %s %s", w1, rhs);
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
+    if (l2 && !nasm_stricmp(w2, "sizestr")) {
+        /* NAME SIZESTR <text>  -> length of the text (a numeric equate). */
+        const char *s = p;
+        while (*s == ' ' || *s == '\t')
+            s++;
+        if (*s == '<') {                            /* literal: count in place */
+            int n = 0, depth = 1;
+            const char *t = s + 1;
+            for (; *t; t++) {
+                if (*t == '<') depth++;
+                else if (*t == '>') { if (--depth == 0) break; }
+                n++;
+            }
+            snprintf(tmp, sizeof tmp, "%%assign %s %d", w1, n);
+            masm_ppq_add(nasm_strdup(tmp));
+        } else {          /* a text macro: stringify it, then measure */
+            snprintf(tmp, sizeof tmp, "%%defstr __masm_sstmp %s", s);
+            masm_ppq_add(nasm_strdup(tmp));
+            snprintf(tmp, sizeof tmp, "%%strlen %s __masm_sstmp", w1);
+            masm_ppq_add(nasm_strdup(tmp));
+        }
+        nasm_free(line);
+        return masm_ppq_get();
+    }
+
+    if (l2 && !nasm_stricmp(w2, "substr")) {
+        /*
+         * NAME SUBSTR text, start[, len].  NASM's %substr needs a string source,
+         * so stringify the first (text) argument via %defstr, then %substr.  A
+         * literal <text> is quoted directly.
+         */
+        const char *s = p;
+        char src[256], rest[256];
+        size_t i = 0;
+        int depth = 0;
+        while (*s == ' ' || *s == '\t')
+            s++;
+        for (; *s && i + 1 < sizeof src; s++) {     /* the text arg, up to comma */
+            if (*s == '<') { depth++; continue; }
+            if (*s == '>') { if (depth) depth--; continue; }
+            if (*s == ',' && depth == 0)
+                break;
+            src[i++] = *s;
+        }
+        src[i] = '\0';
+        while (i && (src[i-1]==' '||src[i-1]=='\t')) src[--i] = '\0';
+        snprintf(rest, sizeof rest, "%s", (*s == ',') ? s + 1 : "");
+        /* stringify source -> %substr into a temp string -> retokenise, so the
+         * result is a token (like other MASM text macros) and chains cleanly. */
+        snprintf(tmp, sizeof tmp, "%%defstr __masm_sstmp %s", src);
+        masm_ppq_add(nasm_strdup(tmp));
+        snprintf(tmp, sizeof tmp, "%%substr __masm_sstmp2 __masm_sstmp,%s", rest);
+        masm_ppq_add(nasm_strdup(tmp));
+        snprintf(tmp, sizeof tmp, "%%deftok %s __masm_sstmp2", w1);
+        masm_ppq_add(nasm_strdup(tmp));
+        nasm_free(line);
+        return masm_ppq_get();
+    }
+
     if (l2 && !nasm_stricmp(w2, "typedef")) {
         /*
          * NAME TYPEDEF spec  --  a type alias.  Make NAME usable as a data
