@@ -40,6 +40,18 @@ in a `--masm` behaviour fails the corresponding fixture.
 | `ptrseg` | `<size> ptr [mem]` and `seg:[mem]` overrides |
 | `directives` | the directive scaffolding (`title/page/.386/segment/assume/ends/end`) end to end |
 
+Authoring-dialect fixtures (Track B — the high-level MASM constructs used to
+*write* code) lock in the same behaviour that was validated byte-identical to
+real ML 6.11:
+
+| fixture | behaviour under test |
+|---|---|
+| `hll_data` | data-label semantics — a label means its contents (`mov eax,val`→`a1`), `OFFSET`, size inference |
+| `hll_proc` | `PROC`/`INVOKE` — frame, params `[ebp+8+4n]`, `leave; ret N`, push-and-call (`= ML`) |
+| `hll_local` | `PROC USES` + `LOCAL` — register save/restore, `[ebp-N]` locals |
+| `hll_flow` | `.IF`/`.ELSE`/`.WHILE`/`.REPEAT`/`.BREAK` (golden is the `-O1` default: near jumps; `-Ox` gives ML's short jumps) |
+| `hll_macro` | `MACRO`/`ENDM`, `REPT`, `TEXTEQU`, `=` (`= ML`) |
+
 Each `.asm` header explains the behaviour and annotates the expected bytes
 inline; `golden/*.hex` is the authoritative comparison.
 
