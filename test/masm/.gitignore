@@ -2,3 +2,6 @@
 .*.out
 # oracle scratch dir (ml_oracle.py)
 .mlwork/
+
+# python bytecode
+__pycache__/
