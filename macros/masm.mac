@@ -171,6 +171,9 @@ USE: masm
 %assign __?MASM_RETBYTES?__ 0   ; bytes for a stack-cleaning RET
 %assign __?MASM_LOCALOFF?__ 0   ; running local-variable offset from EBP
 %assign __?MASM_USESN?__ 0      ; count of USES registers to restore
+%define __?MASM_BRK?__          ; current loop's .BREAK target
+%define __?MASM_CNT?__          ; current loop's .CONTINUE target
+%assign __?MASM_LOOPN?__ 0      ; global loop counter (for break/continue labels)
 
 ;; Define one parameter "name:type" as a DWORD [ebp+off] equate.
 %imacro __?masm_defparam?__ 2.nolist
@@ -408,6 +411,215 @@ USE: masm
 ;; PROTO declares an (often external) procedure so INVOKE can call it.
 %imacro proto 0-*.nolist
   extern %00
+%endmacro
+
+;; ---- .IF / .ELSE / .ENDIF / .WHILE / .REPEAT (B6) -------------------------
+;; High-level control flow.  A condition is `a OP b' (OP: == != > < >= <= &),
+;; lowered to CMP/TEST + a conditional jump.  Comparisons are UNSIGNED --
+;; matching ML's default for register operands.  Nesting uses the preprocessor
+;; context stack.  (Signed operands, && / ||, and .ELSEIF are future work.)
+
+;; op: 1:==  2:!=  3:>  4:<  5:>=  6:<=   ; emit the jump for (op, jumpwhentrue).
+%imacro __?masm_jcc?__ 3.nolist
+  %if %1==1
+    %if %2
+      je %3
+    %else
+      jne %3
+    %endif
+  %elif %1==2
+    %if %2
+      jne %3
+    %else
+      je %3
+    %endif
+  %elif %1==3
+    %if %2
+      ja %3
+    %else
+      jbe %3
+    %endif
+  %elif %1==4
+    %if %2
+      jb %3
+    %else
+      jae %3
+    %endif
+  %elif %1==5
+    %if %2
+      jae %3
+    %else
+      jb %3
+    %endif
+  %elif %1==6
+    %if %2
+      jbe %3
+    %else
+      ja %3
+    %endif
+  %endif
+%endmacro
+
+;; Lower condition %1 to CMP/TEST + a jump to %2 taken when the condition is
+;; (%3 ? true : false).  Operands are single tokens (reg/imm); memory operands
+;; and boolean combinators are future work.
+%imacro __?masm_jcond?__ 3.nolist
+  %defstr %%s %1
+  %strlen %%n %%s
+  %assign %%op 0
+  %assign %%pos 0
+  %assign %%ol 0
+  %assign %%i 1
+  %rep %%n
+    %substr %%c1 %%s %%i
+    %if %%i < %%n
+      %substr %%c2 %%s %%i+1
+    %else
+      %defstr %%c2 " "
+    %endif
+    %ifidn %%c1,'='
+      %ifidn %%c2,'='
+        %assign %%op 1
+      %endif
+    %elifidn %%c1,'!'
+      %assign %%op 2
+    %elifidn %%c1,'>'
+      %ifidn %%c2,'='
+        %assign %%op 5
+      %else
+        %assign %%op 3
+      %endif
+    %elifidn %%c1,'<'
+      %ifidn %%c2,'='
+        %assign %%op 6
+      %else
+        %assign %%op 4
+      %endif
+    %elifidn %%c1,'&'
+      %assign %%op 7
+    %endif
+    %if %%op
+      %assign %%pos %%i
+      %if %%op==1||%%op==2||%%op==5||%%op==6
+        %assign %%ol 2
+      %else
+        %assign %%ol 1
+      %endif
+      %exitrep
+    %endif
+    %assign %%i %%i+1
+  %endrep
+  %if %%op == 0
+    %deftok %%L %1                      ; bare value: true iff nonzero
+    test %%L, %%L
+    %if %3
+      jnz %2
+    %else
+      jz %2
+    %endif
+  %else
+    %assign %%le %%pos-1                 ; trim trailing spaces of the left side
+    %rep %%le
+      %substr %%t %%s %%le
+      %ifidn %%t,' '
+        %assign %%le %%le-1
+      %else
+        %exitrep
+      %endif
+    %endrep
+    %assign %%rs %%pos+%%ol              ; trim leading spaces of the right side
+    %rep %%n
+      %substr %%t %%s %%rs
+      %ifidn %%t,' '
+        %assign %%rs %%rs+1
+      %else
+        %exitrep
+      %endif
+    %endrep
+    %substr %%ls %%s 1,%%le
+    %substr %%rr %%s %%rs,%%n-%%rs+1
+    %deftok %%L %%ls
+    %deftok %%R %%rr
+    %if %%op == 7
+      test %%L, %%R
+      %if %3
+        jnz %2
+      %else
+        jz %2
+      %endif
+    %else
+      cmp %%L, %%R
+      __?masm_jcc?__ %%op, %3, %2
+    %endif
+  %endif
+%endmacro
+
+%imacro .if 1-*.nolist
+  %push masmif
+  __?masm_jcond?__ %1, %$ifnot, 0       ; skip the body when the condition is false
+%endmacro
+%imacro .else 0.nolist
+  jmp %$ifdone
+  %$ifnot:
+  %define %$haselse
+%endmacro
+%imacro .endif 0.nolist
+  %ifndef %$haselse
+    %$ifnot:
+  %endif
+  %$ifdone:
+  %pop
+%endmacro
+
+;; Loops use global (context-independent) break/continue labels so .BREAK and
+;; .CONTINUE work from inside a nested .IF.  __?MASM_BRK?__/__?MASM_CNT?__ hold
+;; the current loop's targets and are saved/restored for nesting.
+%imacro .while 1-*.nolist
+  %push masmwhile
+  %assign __?MASM_LOOPN?__ __?MASM_LOOPN?__+1
+  %assign %$ln __?MASM_LOOPN?__
+  %xdefine %$cond %1
+  %xdefine %$obrk __?MASM_BRK?__
+  %xdefine %$ocnt __?MASM_CNT?__
+  %xdefine __?MASM_BRK?__ __?masm_brk%[%$ln]
+  %xdefine __?MASM_CNT?__ __?masm_cnt%[%$ln]
+  jmp %$test                            ; test at the bottom (ML's layout)
+  %$top:
+%endmacro
+%imacro .endw 0.nolist
+  %$test:
+  __?masm_cnt%[%$ln]:                    ; .CONTINUE re-tests the condition
+  __?masm_jcond?__ %$cond, %$top, 1     ; loop while the condition is true
+  __?masm_brk%[%$ln]:
+  %xdefine __?MASM_BRK?__ %$obrk
+  %xdefine __?MASM_CNT?__ %$ocnt
+  %pop
+%endmacro
+
+%imacro .repeat 0.nolist
+  %push masmrepeat
+  %assign __?MASM_LOOPN?__ __?MASM_LOOPN?__+1
+  %assign %$ln __?MASM_LOOPN?__
+  %xdefine %$obrk __?MASM_BRK?__
+  %xdefine %$ocnt __?MASM_CNT?__
+  %xdefine __?MASM_BRK?__ __?masm_brk%[%$ln]
+  %xdefine __?MASM_CNT?__ __?masm_cnt%[%$ln]
+  %$top:
+%endmacro
+%imacro .until 1-*.nolist
+  __?masm_cnt%[%$ln]:                    ; .CONTINUE falls into the .UNTIL test
+  __?masm_jcond?__ %1, %$top, 0         ; loop until the condition becomes true
+  __?masm_brk%[%$ln]:
+  %xdefine __?MASM_BRK?__ %$obrk
+  %xdefine __?MASM_CNT?__ %$ocnt
+  %pop
+%endmacro
+
+%imacro .break 0.nolist
+  jmp __?MASM_BRK?__
+%endmacro
+%imacro .continue 0.nolist
+  jmp __?MASM_CNT?__
 %endmacro
 
 	default rel
