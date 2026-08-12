@@ -246,7 +246,13 @@ def check_objects(nasm):
             continue
         with open(asm) as f:
             src = f.read()
-        if not re.search(r"(?im)^\s*\S+\s+segment\b", src):
+        # Object-check fixtures that declare a `NAME segment', plus a few
+        # simplified-segment (.code/.model) fixtures whose code is relocation-
+        # free so the extracted object code equals the -f bin golden exactly.
+        # hll_struct also guards the STRUCT-then-.code USE32 path: a regression
+        # to USE16 would add 66 prefixes and fail the byte compare.
+        OBJ_SAFE = {"hll_struct"}
+        if not re.search(r"(?im)^\s*\S+\s+segment\b", src) and name not in OBJ_SAFE:
             nskip += 1               # flat fixture: an -f bin test, not an object
             continue
         with open(gold) as f:

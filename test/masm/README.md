@@ -15,13 +15,17 @@ python run.py --nasm ../../nasm  # pick the nasm binary (default: ../../nasm[.ex
 `run.py` assembles each `fixtures/*.asm` with `nasm --masm -f bin` and compares
 the emitted bytes to `golden/<name>.hex`.
 
-With `--objects`, each MASM-segment fixture (`directives`, `objseg`) is also
-assembled to `-f obj` (OMF) and `-f win32` (COFF); a self-contained reader
-pulls the `_TEXT` code back out and asserts it equals the `-f bin` golden. This
-proves the `NAME segment ... use32 ...` scaffolding yields a faithful 32-bit
-code segment in the object backends, not only in flat `-f bin`. (Full
-OBJ-*record* byte-parity against `ML.EXE` is a separate, oracle-gated goal — see
-the roadmap; here we prove the code path through each backend.)
+With `--objects`, each MASM-segment fixture (`directives`, `objseg`) plus the
+relocation-free `hll_struct` is also assembled to `-f obj` (OMF) and `-f win32`
+(COFF); a self-contained reader pulls the `_TEXT` code back out and asserts it
+equals the `-f bin` golden. This proves the `NAME segment ... use32 ...`
+scaffolding — and the simplified-segment `.MODEL`/`.CODE` path — yield a
+faithful 32-bit code segment in the object backends, not only in flat `-f bin`.
+`hll_struct` specifically guards the STRUCT-then-`.CODE` USE32 path: a
+`struc`/`endstruc` resets NASM's live BITS to 16, so a regression there would
+re-add `66` prefixes and fail the byte compare. (Full OBJ-*record* byte-parity
+against `ML.EXE` is a separate, oracle-gated goal — see the roadmap; here we
+prove the code path through each backend.)
 
 ## Fixtures
 

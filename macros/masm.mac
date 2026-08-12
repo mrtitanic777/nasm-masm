@@ -32,6 +32,12 @@ USE: masm
 %define REAL8_size  8
 %define REAL10_size 10
 
+;; Intended code bitness from the CPU/.model directives.  NASM's own __?BITS?__
+;; is transient -- a STRUCT (NASM `struc'/`endstruc') resets it to 16 -- so the
+;; simplified-segment USE attribute must come from this struc-safe copy instead.
+;; The CPU directives and .MODEL keep it in step; default 16 (MASM's 8086).
+%assign __?MASM_BITS?__ 16
+
 %unimacro segment 1+
 
 ;; MASM: `NAME segment [align] [combine] [useNN] ['class']`.  Switch to a NASM
@@ -49,7 +55,7 @@ USE: masm
   ; The MASM align/combine/class attributes (%1) are swallowed and dropped; they
   ; do not change the code bytes. Translating them to NASM's class=/align=/
   ; combine for a fully faithful object header is future work.
-  %assign %%usebits __?BITS?__
+  %assign %%usebits __?MASM_BITS?__
   %ifidn __?OUTPUT_FORMAT?__, bin
     [segment %00]                        ; -f bin has no segments; USE is moot
   %else
@@ -88,18 +94,23 @@ USE: masm
 ;; assembler for machine-generated listings should stay permissive, and the
 ;; CPU level never affects the byte encoding NASM chooses.  A standalone
 ;; USE16/USE32/USE64 (below) overrides for an individual segment.
-%idefine .8086 [bits 16]
-%idefine .186  [bits 16]
-%idefine .286  [bits 16]
-%idefine .286p [bits 16]
-%idefine .386  [bits 32]
-%idefine .386p [bits 32]
-%idefine .486  [bits 32]
-%idefine .486p [bits 32]
-%idefine .586  [bits 32]
-%idefine .586p [bits 32]
-%idefine .686  [bits 32]
-%idefine .686p [bits 32]
+;; Set both NASM's live BITS and the struc-safe __?MASM_BITS?__ shadow.
+%imacro __?masm_cpu?__ 1.nolist
+  [bits %1]
+  %assign __?MASM_BITS?__ %1
+%endmacro
+%idefine .8086 __?masm_cpu?__ 16
+%idefine .186  __?masm_cpu?__ 16
+%idefine .286  __?masm_cpu?__ 16
+%idefine .286p __?masm_cpu?__ 16
+%idefine .386  __?masm_cpu?__ 32
+%idefine .386p __?masm_cpu?__ 32
+%idefine .486  __?masm_cpu?__ 32
+%idefine .486p __?masm_cpu?__ 32
+%idefine .586  __?masm_cpu?__ 32
+%idefine .586p __?masm_cpu?__ 32
+%idefine .686  __?masm_cpu?__ 32
+%idefine .686p __?masm_cpu?__ 32
 ;; FPU selection directives have no effect on integer encoding: accept, ignore.
 %idefine .8087
 %idefine .287
@@ -135,12 +146,15 @@ USE: masm
 ;; resets BITS to the segment default, so carry USE from the current CPU mode;
 ;; COFF/bin are inherently flat and need no USE attribute.
 %imacro __?masm_sect?__ 1.nolist
-  %assign %%b __?BITS?__
+  %assign %%b __?MASM_BITS?__
   %ifidn __?OUTPUT_FORMAT?__, obj
     [section %1 use %+ %%b]
   %else
     [section %1]
   %endif
+  ; A preceding STRUCT (NASM `struc'/`endstruc') resets the live BITS to 16 and
+  ; the section's USE attribute does not restore it, so re-assert it explicitly.
+  [bits %%b]
 %endmacro
 
 ;; .MODEL memtype [, langtype] [, stackoption]
@@ -150,6 +164,7 @@ USE: masm
 %imacro .model 1-*.nolist
   %ifidni %1, flat
     [bits 32]
+    %assign __?MASM_BITS?__ 32
   %endif
   %if %0 >= 2
     %idefine __?MASM_LANG?__ %2
