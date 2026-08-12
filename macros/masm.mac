@@ -66,7 +66,8 @@ USE: masm
 %endif
 
 %idefine ptr __?masm_ptr?__
-%idefine offset
+;; OFFSET is handled in the parser under --masm (it must suppress the
+;; data-label -> memory-reference conversion), so it is NOT redefined here.
 
 %imacro end 0+.nolist
 	; Nothing

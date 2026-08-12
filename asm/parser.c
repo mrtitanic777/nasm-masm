@@ -26,6 +26,59 @@ static int end_expression_next(void);
 static struct tokenval tokval;
 
 /*
+ * MASM data-label semantics (--masm).
+ *
+ * MASM treats a data label as its memory *contents*; NASM treats it as its
+ * *address*.  To emulate MASM, we record each data label's element size when
+ * its DB/DW/DD/... definition is parsed, and in the operand parser a bare
+ * reference to such a label becomes a sized memory reference `[label]'.
+ * `OFFSET label' keeps NASM's bare-label (address) semantics.
+ */
+static struct hash_table masm_types;    /* label name -> (intptr_t)element size */
+
+static void masm_type_set(const char *name, int size)
+{
+    struct hash_insert hi;
+    void **loc = hash_find(&masm_types, name, &hi);
+    if (loc)
+        *loc = (void *)(intptr_t)size;
+    else
+        hash_add(&hi, nasm_strdup(name), (void *)(intptr_t)size);
+}
+
+static int masm_type_get(const char *name)
+{
+    void **loc = hash_find(&masm_types, name, NULL);
+    return loc ? (int)(intptr_t)*loc : 0;
+}
+
+static opflags_t masm_size_bits(int size)
+{
+    switch (size) {
+    case 1:  return BITS8;
+    case 2:  return BITS16;
+    case 4:  return BITS32;
+    case 8:  return BITS64;
+    case 10: return BITS80;
+    case 16: return BITS128;
+    default: return 0;
+    }
+}
+
+static int masm_dataop_size(int opcode)
+{
+    switch (opcode) {
+    case I_DB: return 1;
+    case I_DW: return 2;
+    case I_DD: return 4;
+    case I_DQ: return 8;
+    case I_DT: return 10;
+    case I_DO: return 16;
+    default:   return 0;
+    }
+}
+
+/*
  * Human-readable description of a token, intended for error messages.
  * The resulting string needs to be freed.
  */
@@ -919,6 +972,15 @@ restart_parse:
             result->operands = oper_num;
             if (oper_num == 0)
                 nasm_warn(WARN_DB_EMPTY, "no operand for data declaration");
+            /*
+             * MASM: a labelled data declaration types the label with its
+             * element size, so a later bare reference to it means its contents.
+             */
+            if (masm_mode && result->label) {
+                int dsz = masm_dataop_size(result->opcode);
+                if (dsz)
+                    masm_type_set(result->label, dsz);
+            }
         }
         return result;
     }
@@ -1053,6 +1115,25 @@ restart_parse:
                 nasm_nonfatal("invalid operand size specification");
             }
             i = stdscan(NULL, &tokval);
+        }
+
+        /*
+         * MASM data-label semantics (--masm): a bare data label used as an
+         * operand means its CONTENTS -- a memory reference [label] sized by the
+         * label's declared type.  `OFFSET label' keeps NASM's bare-label
+         * (address) semantics.
+         */
+        if (masm_mode && !mref && i == TOKEN_ID) {
+            if (!nasm_stricmp(tokval.t_charptr, "offset")) {
+                i = stdscan(NULL, &tokval);     /* consume OFFSET; label stays an address */
+            } else {
+                int msz = masm_type_get(tokval.t_charptr);
+                if (msz) {
+                    mref = true;                /* -> [label] */
+                    if (!setsize)
+                        op->type |= masm_size_bits(msz);
+                }
+            }
         }
 
         if (i == '[' || i == TOKEN_MASM_PTR || i == '&') {
