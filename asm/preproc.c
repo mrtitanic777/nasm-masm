@@ -2259,6 +2259,53 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    if (l2 && !nasm_stricmp(w2, "instr")) {
+        /*
+         * NAME INSTR [start,] <str1>, <str2>  --  1-based position of str2 in
+         * str1 (from `start', default 1), or 0 if absent.  Literal <...> args
+         * are searched here; the result is a numeric equate.
+         */
+        char part[3][256];
+        int np = 0;
+        size_t pi = 0;
+        int depth = 0;
+        const char *s = p;
+        while (*s == ' ' || *s == '\t')
+            s++;
+        for (; *s && np < 3; s++) {             /* split top-level commas */
+            if (*s == '<') { depth++; continue; }
+            if (*s == '>') { if (depth) depth--; continue; }
+            if (*s == ',' && depth == 0) {
+                part[np][pi] = '\0'; np++; pi = 0; continue;
+            }
+            if (pi + 1 < sizeof part[0])
+                part[np][pi++] = *s;
+        }
+        if (np < 3) { part[np][pi] = '\0'; np++; }
+        {
+            int start = 1, base = 0, pos = 0;
+            const char *s1, *s2, *hit;
+            if (np >= 3) {                      /* leading start index */
+                start = atoi(part[0]);
+                if (start < 1) start = 1;
+                base = 1;
+            }
+            s1 = part[base];
+            s2 = part[base + 1];
+            while (*s1 == ' ' || *s1 == '\t') s1++;
+            while (*s2 == ' ' || *s2 == '\t') s2++;
+            if ((int)strlen(s1) >= start - 1) {
+                hit = strstr(s1 + (start - 1), s2);
+                if (hit)
+                    pos = (int)(hit - s1) + 1;
+            }
+            snprintf(tmp, sizeof tmp, "%%assign %s %d", w1, pos);
+        }
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
     if (l2 && !nasm_stricmp(w2, "sizestr")) {
         /* NAME SIZESTR <text>  -> length of the text (a numeric equate). */
         const char *s = p;
