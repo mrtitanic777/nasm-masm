@@ -124,3 +124,4 @@ TAGS
 /autoconf/install-sh
 /autoconf/clean.sh
 /travis/test/_version.stdout
+/.tmpbuild/
