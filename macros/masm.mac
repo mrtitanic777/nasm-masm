@@ -429,14 +429,63 @@ USE: masm
   %endif
 %endmacro
 
-%idefine addr offset                    ; INVOKE ... ADDR x  ->  the address of x
+;; INVOKE ... ADDR x  ->  the address of x.  ADDR is marked (not just `offset')
+;; so INVOKE can tell a global (push its offset, like ML) from a stack local
+;; (lea its [ebp-N] address into a scratch register, then push).
+%idefine addr __?masm_addr?__
+
+;; Push one INVOKE argument.  A plain arg is pushed as-is; an `ADDR operand'
+;; pushes the operand's address -- via `push offset' for a label, or lea+push
+;; for a memory operand (a LOCAL, which has already expanded to [ebp-N]).
+%imacro __?masm_pusharg?__ 1.nolist
+  %defstr %%s %1
+  %strlen %%n %%s
+  %if %%n > 15
+    %substr %%pfx %%s 1,15
+  %else
+    %defstr %%pfx " "
+  %endif
+  %ifidn %%pfx, '__?masm_addr?__'
+    %substr %%r0 %%s 16,%%n-15           ; operand text after the marker
+    %assign %%a 1                        ; trim leading spaces
+    %rep %%n-15
+      %substr %%c %%r0 %%a
+      %ifidn %%c, ' '
+        %assign %%a %%a+1
+      %else
+        %exitrep
+      %endif
+    %endrep
+    %substr %%rest %%r0 %%a,%%n
+    %strlen %%rn %%rest
+    %assign %%isloc 0                    ; a `[' means a memory operand (local)
+    %assign %%i 1
+    %rep %%rn
+      %substr %%c %%rest %%i
+      %ifidn %%c, '['
+        %assign %%isloc 1
+        %exitrep
+      %endif
+      %assign %%i %%i+1
+    %endrep
+    %deftok %%rt %%rest
+    %if %%isloc
+      lea eax, %%rt
+      push eax
+    %else
+      push offset %%rt
+    %endif
+  %else
+    push %1
+  %endif
+%endmacro
 
 ;; INVOKE target, arg, ...  -- push args right-to-left, call, clean for C.
 %imacro invoke 1-*.nolist
   %if %0 > 1
     %rep %0-1
       %rotate -1
-      push %1
+      __?masm_pusharg?__ %1
     %endrep
     %rotate -1                          ; back to the target
   %endif

@@ -54,6 +54,7 @@ real ML 6.11:
 | `hll_data` | data-label semantics — a label means its contents (`mov eax,val`→`a1`), `OFFSET`, size inference |
 | `hll_proc` | `PROC`/`INVOKE` — frame, params `[ebp+8+4n]`, `leave; ret N`, push-and-call (`= ML`) |
 | `hll_local` | `PROC USES` + `LOCAL` — register save/restore, `[ebp-N]` locals |
+| `hll_addr` | `INVOKE ... ADDR` of a global (`push offset`) vs a local (`lea [ebp-N]; push`) — `= ML` |
 | `hll_flow` | `.IF`/`.ELSE`/`.WHILE`/`.REPEAT`/`.BREAK` (golden is the `-O1` default: near jumps; `-Ox` gives ML's short jumps) |
 | `hll_ifchain` | `.ELSEIF` chains, flag conditions (`CARRY?`/`ZERO?`/`!ZERO?`/`SIGN?`), signed compares (`SDWORD PTR`) — `-Ox` = ML |
 | `hll_andor` | boolean `&&` (AND) / `||` (OR) with short-circuit lowering in `.IF` — `-Ox` = ML |
