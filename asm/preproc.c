@@ -1574,6 +1574,97 @@ static size_t masm_word(const char **pp, char *buf, size_t bufsz)
     return n;
 }
 
+/* MASM STRUCT state: while collecting members between STRUCT and ENDS. */
+static bool masm_in_struct;
+
+/* MASM member type -> NASM reservation directive (for a struc field). */
+static const char *masm_type_to_res(const char *t)
+{
+    if (!nasm_stricmp(t, "byte")  || !nasm_stricmp(t, "db") ||
+        !nasm_stricmp(t, "sbyte")) return "resb";
+    if (!nasm_stricmp(t, "word")  || !nasm_stricmp(t, "dw") ||
+        !nasm_stricmp(t, "sword")) return "resw";
+    if (!nasm_stricmp(t, "dword") || !nasm_stricmp(t, "dd") ||
+        !nasm_stricmp(t, "sdword")) return "resd";
+    if (!nasm_stricmp(t, "qword") || !nasm_stricmp(t, "dq")) return "resq";
+    if (!nasm_stricmp(t, "tbyte") || !nasm_stricmp(t, "dt")) return "rest";
+    return NULL;
+}
+
+/*
+ * Rewrite struct member access and SIZEOF in an instruction line:
+ *   [reg].STRUCT.member  ->  [reg + STRUCT.member]   (NASM struc offset)
+ *   SIZEOF name          ->  name_size
+ * (TYPE, PTR and friends are deferred to B9.)
+ * Returns line unchanged, or a freshly allocated rewritten line (line freed).
+ */
+static char *masm_rewrite_line(char *line)
+{
+    const char *p = line;
+    char *out, *o;
+    size_t cap;
+    bool changed = false;
+
+    if (!strstr(line, "].") &&
+        !strstr(line, "SIZEOF") && !strstr(line, "sizeof"))
+        return line;
+
+    cap = strlen(line) * 2 + 64;
+    out = nasm_malloc(cap);
+    o = out;
+
+    while (*p) {
+        /* `].member.chain'  ->  ` + member.chain]' */
+        if (*p == ']' && p[1] == '.') {
+            const char *q = p + 2;
+            o += sprintf(o, " + ");
+            while (nasm_isidchar(*q) || *q == '.')
+                *o++ = *q++;
+            *o++ = ']';
+            p = q;
+            changed = true;
+            continue;
+        }
+        /* SIZEOF name / TYPE name  ->  name_size */
+        if ((nasm_isidstart(*p)) &&
+            (p == line || (!nasm_isidchar(p[-1]) && p[-1] != '.'))) {
+            const char *w = p;
+            size_t wl = 0;
+            while (nasm_isidchar(w[wl]))
+                wl++;
+            if ((wl == 6 && !nasm_strnicmp(p, "sizeof", 6)) ||
+                (wl == 4 && !nasm_strnicmp(p, "type", 4))) {
+                const char *a = p + wl;
+                while (*a == ' ' || *a == '\t')
+                    a++;
+                if (nasm_isidstart(*a)) {
+                    const char *ns = a;
+                    while (nasm_isidchar(*a) || *a == '.')
+                        a++;
+                    o += sprintf(o, "%.*s_size", (int)(a - ns), ns);
+                    p = a;
+                    changed = true;
+                    continue;
+                }
+            }
+            /* copy the whole identifier verbatim (don't re-scan inside it) */
+            memcpy(o, p, wl);
+            o += wl;
+            p += wl;
+            continue;
+        }
+        *o++ = *p++;
+    }
+    *o = '\0';
+
+    if (!changed) {
+        nasm_free(out);
+        return line;
+    }
+    nasm_free(line);
+    return out;
+}
+
 static char *masm_pp_xform(char *line)
 {
     const char *p = line;
@@ -1583,6 +1674,48 @@ static char *masm_pp_xform(char *line)
     l1 = masm_word(&p, w1, sizeof w1);
     if (!l1)
         return line;
+
+    /*
+     * Inside a STRUCT definition: each line is `member TYPE [init]', which
+     * becomes a NASM struc field `.member: resX count' (giving STRUCT.member
+     * offsets and STRUCT_size for free).  `NAME ENDS' closes it.
+     */
+    if (masm_in_struct) {
+        char mtype[64];
+        const char *mp = p;
+        size_t mtl = masm_word(&mp, mtype, sizeof mtype);
+        if (mtl && !nasm_stricmp(mtype, "ends")) {
+            masm_in_struct = false;
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup("endstruc"));
+            return masm_ppq_get();
+        }
+        if (mtl) {
+            const char *res = masm_type_to_res(mtype);
+            int count = 1;
+            const char *rp = mp;
+            while (*rp == ' ' || *rp == '\t')
+                rp++;
+            if (nasm_isdigit(*rp)) {            /* `N DUP(...)' -> count N */
+                int n = atoi(rp);
+                const char *dp = rp;
+                while (nasm_isdigit(*dp))
+                    dp++;
+                while (*dp == ' ' || *dp == '\t')
+                    dp++;
+                if (n > 0 && !nasm_strnicmp(dp, "dup", 3))
+                    count = n;
+            }
+            if (res)
+                snprintf(tmp, sizeof tmp, ".%s: %s %d", w1, res, count);
+            else        /* nested struct type: reserve <type>_size bytes */
+                snprintf(tmp, sizeof tmp, ".%s: resb %s_size", w1, mtype);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
+        }
+        return line;
+    }
 
     if (!nasm_stricmp(w1, "endm")) {
         struct masm_ppblk *b = masm_ppstk;
@@ -1673,6 +1806,15 @@ static char *masm_pp_xform(char *line)
 
     l2 = masm_word(&p, w2, sizeof w2);
 
+    if (l2 && (!nasm_stricmp(w2, "struct") || !nasm_stricmp(w2, "struc"))) {
+        /* NAME STRUCT  ->  struc NAME; members collected until NAME ENDS. */
+        masm_in_struct = true;
+        snprintf(tmp, sizeof tmp, "struc %s", w1);
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
     if (l2 && !nasm_stricmp(w2, "textequ")) {
         /* NAME TEXTEQU value  ->  %xdefine NAME value  (strip outer <>) */
         const char *v = p;
@@ -1742,7 +1884,8 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
-    return line;
+    /* Plain line: apply struct-member / SIZEOF operand rewrites. */
+    return masm_rewrite_line(line);
 }
 
 static char *read_line(void)

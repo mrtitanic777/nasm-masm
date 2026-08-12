@@ -51,6 +51,8 @@ real ML 6.11:
 | `hll_local` | `PROC USES` + `LOCAL` — register save/restore, `[ebp-N]` locals |
 | `hll_flow` | `.IF`/`.ELSE`/`.WHILE`/`.REPEAT`/`.BREAK` (golden is the `-O1` default: near jumps; `-Ox` gives ML's short jumps) |
 | `hll_macro` | `MACRO`/`ENDM`, `REPT`, `TEXTEQU`, `=` (`= ML`) |
+| `hll_cond` | `IF`/`IFE`/`IFDEF`/`IFNDEF`/`ELSE`/`ELSEIF`/`ENDIF` assembly-time conditionals (`= ML`) |
+| `hll_struct` | `STRUCT`/`ENDS` (incl. `DUP` arrays, nested), `[reg].STRUCT.member`, `SIZEOF STRUCT` (`= ML`) |
 
 Each `.asm` header explains the behaviour and annotates the expected bytes
 inline; `golden/*.hex` is the authoritative comparison.
