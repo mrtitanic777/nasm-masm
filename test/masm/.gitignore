@@ -1,2 +1,4 @@
 # transient assembler output written by run.py
 .*.out
+# oracle scratch dir (ml_oracle.py)
+.mlwork/
