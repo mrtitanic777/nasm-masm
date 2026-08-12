@@ -1500,10 +1500,187 @@ static char *line_from_file(FILE *f)
 /*
  * Common read routine regardless of source
  */
+/*
+ * MASM macro / repeat front-end (--masm).
+ *
+ * MASM's MACRO/ENDM and REPT/ENDM are structurally unlike NASM's %macro/%rep
+ * and cannot be emulated in the macro package (a package macro cannot open a
+ * %macro, and ENDM cannot be aliased to a closing directive).  So we translate
+ * them at the raw-line level, before tokenization:
+ *
+ *   NAME MACRO a, b   ->  %macro NAME 2   (body top: %define a %1, %define b %2)
+ *   ENDM              ->  %endmacro / %endrep  (per the innermost open block)
+ *   REPT n / REPEAT n ->  %rep n
+ *
+ * Named parameters are bound to the positional %1.. via %define lines injected
+ * at the top of the body and %undef'd at ENDM.  Extra lines produced from one
+ * input line are held in a queue and returned by read_line() in order.
+ */
+struct masm_ppblk {
+    struct masm_ppblk *next;
+    bool is_macro;
+    int nparam;
+    char **param;
+};
+static struct masm_ppblk *masm_ppstk;
+
+struct masm_ppq {
+    struct masm_ppq *next;
+    char *text;
+};
+static struct masm_ppq *masm_ppq_head, *masm_ppq_tail;
+
+static void masm_ppq_add(char *text)
+{
+    struct masm_ppq *q;
+    nasm_new(q);
+    q->text = text;
+    if (masm_ppq_tail)
+        masm_ppq_tail->next = q;
+    else
+        masm_ppq_head = q;
+    masm_ppq_tail = q;
+}
+
+static char *masm_ppq_get(void)
+{
+    struct masm_ppq *q = masm_ppq_head;
+    char *text;
+    if (!q)
+        return NULL;
+    text = q->text;
+    masm_ppq_head = q->next;
+    if (!masm_ppq_head)
+        masm_ppq_tail = NULL;
+    nasm_free(q);
+    return text;
+}
+
+/* Copy the identifier at *pp (skipping leading blanks) into buf; advance *pp. */
+static size_t masm_word(const char **pp, char *buf, size_t bufsz)
+{
+    const char *p = *pp;
+    size_t n = 0;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    while (nasm_isidchar(*p)) {
+        if (n + 1 < bufsz)
+            buf[n] = *p;
+        n++;
+        p++;
+    }
+    buf[n < bufsz ? n : bufsz - 1] = '\0';
+    *pp = p;
+    return n;
+}
+
+static char *masm_pp_xform(char *line)
+{
+    const char *p = line;
+    char w1[256], w2[256], tmp[512];
+    size_t l1, l2;
+
+    l1 = masm_word(&p, w1, sizeof w1);
+    if (!l1)
+        return line;
+
+    if (!nasm_stricmp(w1, "endm")) {
+        struct masm_ppblk *b = masm_ppstk;
+        if (!b)
+            return line;                /* stray ENDM: let NASM diagnose */
+        masm_ppstk = b->next;
+        if (b->is_macro) {
+            int i;
+            for (i = 0; i < b->nparam; i++) {
+                snprintf(tmp, sizeof tmp, "%%undef %s", b->param[i]);
+                masm_ppq_add(nasm_strdup(tmp));
+                nasm_free(b->param[i]);
+            }
+            nasm_free(b->param);
+            masm_ppq_add(nasm_strdup("%endmacro"));
+        } else {
+            masm_ppq_add(nasm_strdup("%endrep"));
+        }
+        nasm_free(b);
+        nasm_free(line);
+        return masm_ppq_get();
+    }
+
+    if (!nasm_stricmp(w1, "rept") || !nasm_stricmp(w1, "repeat")) {
+        struct masm_ppblk *b;
+        while (*p == ' ' || *p == '\t')
+            p++;
+        snprintf(tmp, sizeof tmp, "%%rep %s", p);
+        nasm_new(b);
+        b->next = masm_ppstk;
+        masm_ppstk = b;
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
+    l2 = masm_word(&p, w2, sizeof w2);
+    if (l2 && !nasm_stricmp(w2, "macro")) {
+        struct masm_ppblk *b;
+        int nparam = 0, i;
+        char **param = NULL;
+        const char *q = p;
+
+        while (*q == ' ' || *q == '\t')
+            q++;
+        while (*q) {                    /* comma-separated parameter names */
+            char nm[128];
+            size_t n = 0;
+            while (*q == ' ' || *q == '\t')
+                q++;
+            while (nasm_isidchar(*q)) {
+                if (n + 1 < sizeof nm)
+                    nm[n] = *q;
+                n++;
+                q++;
+            }
+            nm[n < sizeof nm ? n : sizeof nm - 1] = '\0';
+            if (n) {
+                param = nasm_realloc(param, (nparam + 1) * sizeof(char *));
+                param[nparam++] = nasm_strdup(nm);
+            }
+            while (*q && *q != ',')     /* skip :REQ / :=default etc. */
+                q++;
+            if (*q == ',')
+                q++;
+            else
+                break;
+        }
+
+        snprintf(tmp, sizeof tmp, "%%macro %s %d", w1, nparam);
+        masm_ppq_add(nasm_strdup(tmp));
+        for (i = 0; i < nparam; i++) {
+            snprintf(tmp, sizeof tmp, "%%define %s %%%d", param[i], i + 1);
+            masm_ppq_add(nasm_strdup(tmp));
+        }
+        nasm_new(b);
+        b->is_macro = true;
+        b->nparam = nparam;
+        b->param = param;
+        b->next = masm_ppstk;
+        masm_ppstk = b;
+        nasm_free(line);
+        return masm_ppq_get();
+    }
+
+    return line;
+}
+
 static char *read_line(void)
 {
     char *line;
     FILE *f = istk->fp;
+
+    if (masm_mode) {
+        line = masm_ppq_get();          /* drain queued translated lines first */
+        if (line)
+            return line;
+    }
 
     if (f)
         line = line_from_file(f);
@@ -1512,6 +1689,9 @@ static char *read_line(void)
 
     if (!line)
         return NULL;
+
+    if (masm_mode)
+        line = masm_pp_xform(line);     /* MASM MACRO/ENDM/REPT -> NASM */
 
     if (!istk->nolist)
         lfmt->line(LIST_READ, istk->where.lineno, line);
