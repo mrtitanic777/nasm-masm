@@ -1579,6 +1579,32 @@ static size_t masm_word(const char **pp, char *buf, size_t bufsz)
     return n;
 }
 
+static int masm_type_bytes(const char *t);   /* defined below */
+
+/*
+ * If an expression begins with a `<size> PTR' cast (BYTE/WORD/DWORD/... PTR),
+ * return a pointer past it; otherwise return the input unchanged.  MASM uses
+ * this in equates like `alias EQU byte ptr field' to type an offset alias.
+ */
+static const char *masm_skip_typeptr(const char *s)
+{
+    char w1[16], w2[16];
+    const char *p = s, *save;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    save = p;
+    masm_word(&p, w1, sizeof w1);
+    if (!masm_type_bytes(w1))
+        return s;
+    masm_word(&p, w2, sizeof w2);
+    if (nasm_stricmp(w2, "ptr"))
+        return s;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    (void)save;
+    return p;
+}
+
 /*
  * MASM STRUCT bookkeeping.  Definitions translate to a NASM `struc' (offsets +
  * size), but static instances (`pt POINT <a,b>') need the member list to emit
@@ -1707,6 +1733,7 @@ static char *masm_rewrite_line(char *line)
             {
                 const char *pre = NULL;
                 if      (wl == 6 && !nasm_strnicmp(p, "sizeof", 6)) pre = "";
+                else if (wl == 4 && !nasm_strnicmp(p, "size",   4)) pre = "";
                 else if (wl == 4 && !nasm_strnicmp(p, "type",   4)) pre = "";
                 else if (wl == 4 && !nasm_strnicmp(p, "mask",   4)) pre = "MASK_";
                 else if (wl == 5 && !nasm_strnicmp(p, "width",  5)) pre = "WIDTH_";
@@ -2491,7 +2518,7 @@ static char *masm_pp_xform(char *line)
             pe++;
         if (*pe == '=' && pe[1] != '=') {
             char ex[512];
-            masm_xlat_ops(ex, sizeof ex, pe + 1);
+            masm_xlat_ops(ex, sizeof ex, masm_skip_typeptr(pe + 1));
             snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, ex);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
@@ -2888,6 +2915,16 @@ static char *masm_pp_xform(char *line)
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
+        }
+        {
+            /* NAME EQU <size> PTR expr -- a typed offset alias; drop the cast. */
+            const char *stripped = masm_skip_typeptr(v);
+            if (stripped != v) {
+                snprintf(tmp, sizeof tmp, "%s equ %s", w1, stripped);
+                nasm_free(line);
+                masm_ppq_add(nasm_strdup(tmp));
+                return masm_ppq_get();
+            }
         }
     }
 
