@@ -52,14 +52,24 @@ USE: masm
   ; (.386 -> use32), captured from __?BITS?__ before the section switch resets
   ; it to the segment default -- so the object backends (-f obj/coff) get 32-bit
   ; code and a USE32 header, and `-f bin' is unaffected (it has no segments).
-  ; The MASM align/combine/class attributes (%1) are swallowed and dropped; they
-  ; do not change the code bytes. Translating them to NASM's class=/align=/
-  ; combine for a fully faithful object header is future work.
+  ; Two spellings are accepted: MASM's `NAME segment attrs' (the name is the
+  ; line label -> %00; the MASM align/combine/class attrs in %1 are swallowed and
+  ; dropped, as they do not change the code bytes), and NASM's own `segment NAME
+  ; attrs' (no label -> %00 empty, name+attrs in %1, passed through).  USE follows
+  ; the struc-safe CPU-mode shadow.
   %assign %%usebits __?MASM_BITS?__
   %ifidn __?OUTPUT_FORMAT?__, bin
-    [segment %00]                        ; -f bin has no segments; USE is moot
+    %ifempty %00
+      [segment %1]                       ; segment NAME attrs (NASM form)
+    %else
+      [segment %00]                      ; NAME segment mattrs (MASM form)
+    %endif
   %else
-    [segment %00 use %+ %%usebits]
+    %ifempty %00
+      [segment %1 use %+ %%usebits]
+    %else
+      [segment %00 use %+ %%usebits]
+    %endif
   %endif
 %endmacro
 
