@@ -3803,9 +3803,17 @@ static int process_ea(operand *input, int rfield, opflags_t rflags,
                     }
                 } else {
                     if (((s == 2 && it != REG_NUM_ESP &&
-                          (!(eaflags & EAF_TIMESTWO) || (ht == EAH_SUMMED))) ||
+                          ((ht == EAH_SUMMED) ||
+                           (!masm_mode && !(eaflags & EAF_TIMESTWO)))) ||
                          s == 3 || s == 5 || s == 9) && bt == -1) {
-                        /* convert 3*EAX to EAX+2*EAX */
+                        /*
+                         * convert 3*EAX to EAX+2*EAX (and normally [reg*2] to
+                         * [reg+reg]).  Under --masm the [reg*2] fold is skipped:
+                         * ML keeps the index*2+disp32 SIB form the disassembly
+                         * corpus was written from.  The s==3/5/9 decompositions
+                         * are mandatory (those scales cannot be encoded) and so
+                         * apply in either mode.
+                         */
                         bt = it, bx = ix, s--;
                     }
                     if (it == -1 && (bt & 7) != REG_NUM_ESP &&
