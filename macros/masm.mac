@@ -45,21 +45,8 @@ USE: masm
   %null ends %00
 %endmacro
 
-%imacro proc 0-*.nolist
-  %rep %0
-    %ifidni %1,far
-      %idefine ret retf
-    %else
-      %idefine ret retn
-    %endif
-    %rotate 1
-  %endrep
-%endmacro
-
-%imacro endp 0.nolist
-  %null endp %00
-  %undef ret
-%endmacro
+;; proc/endp/ret/invoke are the authoring-dialect PROC/INVOKE (Track B / B5),
+;; defined further down.
 
 %ifndef st
   %idefine st(x) st %+ x
@@ -170,6 +157,135 @@ USE: masm
 %endmacro
 %imacro .stack 0-1.nolist
   ; flat model: the OS provides the stack; accept and ignore
+%endmacro
+
+;; ---- PROC / ENDP / RET / INVOKE / PROTO (B5) ------------------------------
+;; Functional MASM procedures for the 32-bit flat model.  A PROC with a
+;; parameter list gets a standard EBP frame; parameters become sized [ebp+N]
+;; equates; RET emits the epilogue (LEAVE + a stack-cleaning RET for
+;; stdcall/pascal).  A frameless PROC (no params) emits no prologue, matching
+;; ML.  INVOKE pushes arguments right-to-left and calls, cleaning the stack for
+;; the C convention.  Locals/USES and full type checking are future work.
+
+%assign __?MASM_FRAME?__ 0      ; is an EBP frame active (affects RET)
+%assign __?MASM_RETBYTES?__ 0   ; bytes for a stack-cleaning RET
+
+;; Define one parameter "name:type" as a DWORD [ebp+off] equate.
+%imacro __?masm_defparam?__ 2.nolist
+  %defstr %%p %1
+  %strlen %%len %%p
+  %assign %%i 1
+  %assign %%col 0
+  %rep %%len
+    %substr %%c %%p %%i
+    %ifidn %%c, ':'
+      %assign %%col %%i
+      %exitrep
+    %endif
+    %assign %%i %%i+1
+  %endrep
+  %if %%col
+    %substr %%nm %%p 1,%%col-1
+  %else
+    %defstr %%nm %1
+  %endif
+  %deftok %%nt %%nm
+  %xdefine %[%%nt] dword [ebp+%2]
+%endmacro
+
+%imacro proc 0-*.nolist
+  %00:                                  ; define the procedure label
+  %assign %%off 8                       ; first parameter is at [ebp+8]
+  %assign %%pbytes 0
+  ;; default calling convention from .MODEL; an explicit PROC langtype overrides
+  %assign %%cdecl 0
+  %ifdef __?MASM_LANG?__
+    %ifidni __?MASM_LANG?__, c
+      %assign %%cdecl 1
+    %endif
+  %endif
+  %rep %0
+    %ifidni %1,c
+      %assign %%cdecl 1
+    %elifidni %1,syscall
+      %assign %%cdecl 1
+    %elifidni %1,stdcall
+      %assign %%cdecl 0
+    %elifidni %1,pascal
+      %assign %%cdecl 0
+    %elifidni %1,near
+    %elifidni %1,far
+    %elifidni %1,near32
+    %elifidni %1,far32
+    %elifidni %1,public
+    %elifidni %1,private
+    %elifidni %1,export
+    %else
+      __?masm_defparam?__ %1, %%off     ; a parameter: name:type
+      %assign %%off %%off+4
+      %assign %%pbytes %%pbytes+4
+    %endif
+    %rotate 1
+  %endrep
+  %if %%pbytes
+    push ebp
+    mov ebp, esp
+    %assign __?MASM_FRAME?__ 1
+  %else
+    %assign __?MASM_FRAME?__ 0
+  %endif
+  %if %%cdecl
+    %assign __?MASM_RETBYTES?__ 0        ; caller cleans
+  %else
+    %assign __?MASM_RETBYTES?__ %%pbytes ; stdcall/pascal: callee cleans
+  %endif
+%endmacro
+
+%imacro endp 0.nolist
+  %null endp %00                        ; consume the label (don't redefine it)
+  %assign __?MASM_FRAME?__ 0
+  %assign __?MASM_RETBYTES?__ 0
+%endmacro
+
+;; RET emits the procedure epilogue.  Outside a frame it is a plain near RET,
+;; so the machine-generated corpus (which never opens a PROC) is unaffected.
+%imacro ret 0-1.nolist
+  %if __?MASM_FRAME?__
+    leave
+  %endif
+  %if %0 == 1
+    retn %1
+  %elif __?MASM_RETBYTES?__
+    retn __?MASM_RETBYTES?__
+  %else
+    retn
+  %endif
+%endmacro
+
+%idefine addr offset                    ; INVOKE ... ADDR x  ->  the address of x
+
+;; INVOKE target, arg, ...  -- push args right-to-left, call, clean for C.
+%imacro invoke 1-*.nolist
+  %if %0 > 1
+    %rep %0-1
+      %rotate -1
+      push %1
+    %endrep
+    %rotate -1                          ; back to the target
+  %endif
+  call %1
+  %if %0 > 1
+    %ifdef __?MASM_LANG?__
+      %ifidni __?MASM_LANG?__, c
+        add esp, 4*(%0-1)
+      %endif
+    %endif
+  %endif
+%endmacro
+
+;; PROTO declares an (often external) procedure so INVOKE can call it.
+%imacro proto 0-*.nolist
+  extern %00
 %endmacro
 
 	default rel
