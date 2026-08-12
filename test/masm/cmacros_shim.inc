@@ -72,21 +72,41 @@
 %idefine externD  __cs_extern
 %idefine externB  __cs_extern
 %idefine externA  __cs_extern
-%imacro LabelFP 1-*
-%1:
+;; label<T> [<flags,name>] -- emit a label.  The name arrives bracket-split and
+;; may be preceded by PUBLIC/etc; strip brackets and skip the known flags, then
+;; define the remaining token as a label.
+%imacro __cs_label 1-*
+    %rep %0
+        %defstr __cl_s %1
+        %strlen __cl_n __cl_s
+        %assign __cl_a 1
+        %assign __cl_b __cl_n
+        %substr __cl_c __cl_s 1,1
+        %ifidn __cl_c, '<'
+            %assign __cl_a 2
+        %endif
+        %substr __cl_c __cl_s __cl_n,1
+        %ifidn __cl_c, '>'
+            %assign __cl_b __cl_b - 1
+        %endif
+        %if __cl_b >= __cl_a
+            %substr __cl_r __cl_s __cl_a,__cl_b-__cl_a+1
+            %deftok __cl_t __cl_r
+            %ifnidni __cl_t, PUBLIC
+            %ifnidni __cl_t, PRIVATE
+                __cl_t:
+            %endif
+            %endif
+        %endif
+        %rotate 1
+    %endrep
 %endmacro
-%imacro labelFP 1-*
-%1:
-%endmacro
-%imacro labelNP 1-*
-%1:
-%endmacro
-%imacro labelW 1-*
-%1:
-%endmacro
-%imacro labelB 1-*
-%1:
-%endmacro
+%idefine LabelFP __cs_label
+%idefine labelFP __cs_label
+%idefine labelNP __cs_label
+%idefine labelW  __cs_label
+%idefine labelB  __cs_label
+%idefine labelD  __cs_label
 
 ;; ---- procedure frame state ----
 %assign __cp_far   0

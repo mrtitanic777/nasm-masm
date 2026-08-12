@@ -1834,8 +1834,8 @@ static char *masm_subst_params(char *line, char **param, int nparam)
     bool changed = false;
     char q = 0;                         /* current string-quote char, or 0 */
 
-    if (nparam <= 0)
-        return line;
+    /* Even with no parameters, this pass still handles the `&' paste and `%sym'
+     * immediate operators, which appear in parameterless macro bodies too. */
     out = nasm_malloc(strlen(line) * 4 + 64);
     o = out;
 
@@ -2004,7 +2004,7 @@ static char *masm_pp_xform(char *line)
 
     /* Inside a MACRO body: substitute the parameter names with %1..%N first, so
      * every later transform sees the NASM parameter form. */
-    if (masm_ppstk && masm_ppstk->is_macro && masm_ppstk->nparam > 0)
+    if (masm_ppstk && masm_ppstk->is_macro)
         line = masm_subst_params(line, masm_ppstk->param, masm_ppstk->nparam);
     p = line;
 
