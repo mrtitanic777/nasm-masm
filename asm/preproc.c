@@ -1813,6 +1813,27 @@ static char *masm_subst_params(char *line, char **param, int nparam)
             continue;
         }
         /*
+         * MASM's `%' immediate operator: `%sym' mid-line means the VALUE of sym.
+         * Map to NASM's `%[sym]' (forced expansion).  A line-leading `%' is a
+         * NASM directive (%if/%assign/...) and is left alone, as are %1 (digit)
+         * and %%/%$/%[ forms.
+         */
+        if (*p == '%' && (nasm_isalpha(p[1]) || p[1] == '_')) {
+            bool leading = true;
+            const char *b;
+            for (b = line; b < p; b++)
+                if (*b != ' ' && *b != '\t') { leading = false; break; }
+            if (!leading) {
+                const char *s = p + 1;
+                while (nasm_isidchar(*s) || *s == '.')
+                    s++;
+                o += sprintf(o, "%%[%.*s]", (int)(s - (p + 1)), p + 1);
+                p = s;
+                changed = true;
+                continue;
+            }
+        }
+        /*
          * MASM's `&' substitution/paste operator (inside a macro body): drop it
          * where it joins a parameter to adjacent text, so `ln&OFFSET' becomes
          * `%{2}OFFSET' -> `CODEOFFSET' after paste.  As a macro-body operator it
