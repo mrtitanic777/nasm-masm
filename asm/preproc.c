@@ -2120,6 +2120,36 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    if (l2 && !nasm_stricmp(w2, "typedef")) {
+        /*
+         * NAME TYPEDEF spec  --  a type alias.  Make NAME usable as a data
+         * directive and give it a size:
+         *   TYPEDEF <primitive>       -> that directive / size
+         *   TYPEDEF PTR x / PROTO ... -> a pointer: dd / 4 (32-bit flat)
+         * (A pointer defined before .MODEL would be 16-bit/2 under ML; we use
+         * the 32-bit size, which is what post-.MODEL headers expect.)
+         */
+        char sw[64];
+        const char *sp = p;
+        size_t swl;
+        const char *dir;
+        int sz;
+        swl = masm_word(&sp, sw, sizeof sw);
+        sz = swl ? masm_type_bytes(sw) : 0;
+        if (sz) {
+            dir = masm_type_to_dd(sw);
+        } else {                                /* pointer / proto / alias */
+            dir = "dd";
+            sz = 4;
+        }
+        snprintf(tmp, sizeof tmp, "%%idefine %s %s", w1, dir ? dir : "dd");
+        masm_ppq_add(nasm_strdup(tmp));
+        snprintf(tmp, sizeof tmp, "%%define %s_size %d", w1, sz);
+        masm_ppq_add(nasm_strdup(tmp));
+        nasm_free(line);
+        return masm_ppq_get();
+    }
+
     if (l2 && masm_sdef_find(w2)) {
         /*
          * `label STRUCTTYPE <i0, i1, ...>' -- a static struct instance.  Emit a
