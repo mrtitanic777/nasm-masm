@@ -1781,11 +1781,81 @@ static char *masm_rewrite_line(char *line)
     return out;
 }
 
+/*
+ * Textually substitute a macro's parameter names with %1..%N throughout a body
+ * line (MASM's model), so that a parameter works in every position -- including
+ * as the target of `name = value' (-> `%N = value') and of `ifndef name', which
+ * the `%define name %N' smacro approach cannot express.  Substitution skips the
+ * insides of '...' and "..." string literals; identifiers are matched whole.
+ */
+static char *masm_subst_params(char *line, char **param, int nparam)
+{
+    const char *p = line;
+    char *out, *o;
+    bool changed = false;
+    char q = 0;                         /* current string-quote char, or 0 */
+
+    if (nparam <= 0)
+        return line;
+    out = nasm_malloc(strlen(line) * 4 + 64);
+    o = out;
+
+    while (*p) {
+        if (q) {                        /* inside a string literal */
+            if (*p == q)
+                q = 0;
+            *o++ = *p++;
+            continue;
+        }
+        if (*p == '\'' || *p == '"') {
+            q = *p;
+            *o++ = *p++;
+            continue;
+        }
+        if (nasm_isidstart(*p) &&
+            (p == line || (!nasm_isidchar(p[-1]) && p[-1] != '%' && p[-1] != '.'))) {
+            size_t wl = 0;
+            int i, hit = -1;
+            while (nasm_isidchar(p[wl]))
+                wl++;
+            for (i = 0; i < nparam; i++)
+                if (strlen(param[i]) == wl && !memcmp(p, param[i], wl)) {
+                    hit = i;
+                    break;
+                }
+            if (hit >= 0) {
+                o += sprintf(o, "%%{%d}", hit + 1);
+                p += wl;
+                changed = true;
+                continue;
+            }
+            memcpy(o, p, wl);
+            o += wl;
+            p += wl;
+            continue;
+        }
+        *o++ = *p++;
+    }
+    *o = '\0';
+    if (!changed) {
+        nasm_free(out);
+        return line;
+    }
+    nasm_free(line);
+    return out;
+}
+
 static char *masm_pp_xform(char *line)
 {
     const char *p = line;
     char w1[256], w2[256], tmp[512];
     size_t l1, l2;
+
+    /* Inside a MACRO body: substitute the parameter names with %1..%N first, so
+     * every later transform sees the NASM parameter form. */
+    if (masm_ppstk && masm_ppstk->is_macro && masm_ppstk->nparam > 0)
+        line = masm_subst_params(line, masm_ppstk->param, masm_ppstk->nparam);
+    p = line;
 
     /* Inside a COMMENT block: swallow lines until the delimiter recurs. */
     if (masm_comment_delim) {
@@ -1795,9 +1865,52 @@ static char *masm_pp_xform(char *line)
         return nasm_strdup("");
     }
 
+    /* A `%'-line is MASM's immediate text-expansion; the only such directive we
+     * need is %OUT (an assembly-time message) -- drop it.  (`%' cannot start a
+     * NASM identifier, so this must be checked before the word scan.) */
+    {
+        const char *q = line;
+        while (*q == ' ' || *q == '\t')
+            q++;
+        if (q[0] == '%' && !nasm_strnicmp(q + 1, "out", 3)) {
+            nasm_free(line);
+            return nasm_strdup("");
+        }
+    }
+
+    /* A parameter used as an `=' target became `%{N}' after substitution; the
+     * name-first `=' handler below cannot see it, so convert it here. */
+    if (masm_ppstk && masm_ppstk->is_macro) {
+        const char *q = line;
+        while (*q == ' ' || *q == '\t')
+            q++;
+        if (q[0] == '%' && q[1] == '{') {
+            const char *e = strchr(q, '}');
+            if (e) {
+                const char *eq = e + 1;
+                while (*eq == ' ' || *eq == '\t')
+                    eq++;
+                if (*eq == '=' && eq[1] != '=') {
+                    snprintf(tmp, sizeof tmp, "%%assign %.*s %s",
+                             (int)(e - q + 1), q, eq + 1);
+                    nasm_free(line);
+                    masm_ppq_add(nasm_strdup(tmp));
+                    return masm_ppq_get();
+                }
+            }
+        }
+    }
+
     l1 = masm_word(&p, w1, sizeof w1);
     if (!l1)
         return line;
+
+    if (!nasm_stricmp(w1, "purge")) {
+        /* PURGE removes macro definitions; we simply leave them defined (NASM
+         * permits redefinition), so accept and drop. */
+        nasm_free(line);
+        return nasm_strdup("");
+    }
 
     /* MASM COMMENT delim [text] ... delim  -- a block comment. */
     if (!nasm_stricmp(w1, "comment")) {
@@ -1923,11 +2036,8 @@ static char *masm_pp_xform(char *line)
             nasm_free(b->forname);
         } else if (b->is_macro) {
             int i;
-            for (i = 0; i < b->nparam; i++) {
-                snprintf(tmp, sizeof tmp, "%%undef %s", b->param[i]);
-                masm_ppq_add(nasm_strdup(tmp));
+            for (i = 0; i < b->nparam; i++)   /* params were substituted textually */
                 nasm_free(b->param[i]);
-            }
             nasm_free(b->param);
             masm_ppq_add(nasm_strdup("%endmacro"));
         } else {
@@ -2105,6 +2215,10 @@ static char *masm_pp_xform(char *line)
         else if (!nasm_stricmp(w1, "ifdef"))  dir = "%ifdef";
         else if (!nasm_stricmp(w1, "ifndef")) dir = "%ifndef";
         else if (!nasm_stricmp(w1, "elseif")) dir = "%elif";
+        /* Pass-specific IF1/IF2: this preprocessor runs once, so IF1 (pass-1
+         * one-time setup) is always taken and IF2 is never taken. */
+        else if (!nasm_stricmp(w1, "if1"))    { dir = "%if"; rest = "1"; }
+        else if (!nasm_stricmp(w1, "if2"))    { dir = "%if"; rest = "0"; }
         if (dir) {
             snprintf(tmp, sizeof tmp, "%s %s", dir, rest);
             nasm_free(line);
@@ -2618,10 +2732,9 @@ static char *masm_pp_xform(char *line)
         else
             snprintf(tmp, sizeof tmp, "%%macro %s 0", w1);
         masm_ppq_add(nasm_strdup(tmp));
-        for (i = 0; i < nparam; i++) {
-            snprintf(tmp, sizeof tmp, "%%define %s %%%d", param[i], i + 1);
-            masm_ppq_add(nasm_strdup(tmp));
-        }
+        /* Parameters are substituted textually in the body (masm_subst_params),
+         * so no `%define param %N' smacros are emitted here. */
+        (void)i;
         nasm_new(b);
         b->is_macro = true;
         b->nparam = nparam;
