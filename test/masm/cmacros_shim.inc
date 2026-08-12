@@ -188,3 +188,40 @@
 %endmacro
 %imacro errn$ 1-*
 %endmacro
+
+;; cCall func, <arg,...> [, convention] -- push args left-to-right (PASCAL) then
+;; call.  The <...> group arrives bracket-split (`<ax', `bx>'); strip and push.
+%imacro cCall 1-*
+    %xdefine __cc_fn %1
+    %rep %0 - 1
+        %rotate 1
+        %defstr __cc_s %1
+        %strlen __cc_n __cc_s
+        %assign __cc_a 1
+        %assign __cc_b __cc_n
+        %substr __cc_c __cc_s 1,1
+        %ifidn __cc_c, '<'
+            %assign __cc_a 2
+        %endif
+        %substr __cc_c __cc_s __cc_n,1
+        %ifidn __cc_c, '>'
+            %assign __cc_b __cc_b - 1
+        %endif
+        %if __cc_b >= __cc_a
+            %substr __cc_r __cc_s __cc_a,__cc_b-__cc_a+1
+            %deftok __cc_t __cc_r
+            push __cc_t
+        %endif
+    %endrep
+    call __cc_fn
+%endmacro
+
+;; regPtr name, seg, off -- a far-pointer register pair.  (Functional subset:
+;; bind the name to the offset register; the segment part of a far push is a
+;; follow-on.)
+%imacro regPtr 3
+    %define %1 %3
+%endmacro
+%imacro labelVDO 1-*
+%1:
+%endmacro
