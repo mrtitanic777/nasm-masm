@@ -1819,7 +1819,9 @@ static char *masm_subst_params(char *line, char **param, int nparam)
          * is never bitwise-AND (that is the AND keyword), so this is unambiguous.
          */
         if (*p == '&' &&
-            ((p > line && nasm_isidchar(p[-1])) || nasm_isidchar(p[1]))) {
+            ((p > line && nasm_isidchar(p[-1])) || nasm_isidchar(p[1])) &&
+            nasm_strnicmp(p + 1, "macro", 5) &&   /* keep &macro / &endm intact: */
+            nasm_strnicmp(p + 1, "endm", 4)) {    /* they are nested-macro delims */
             p++;
             changed = true;
             continue;
@@ -1899,6 +1901,47 @@ static char *masm_pp_xform(char *line)
     char w1[256], w2[256], tmp[512];
     size_t l1, l2;
 
+    /*
+     * A macro that GENERATES a macro: `NAME &macro [p,...]' opens the inner
+     * macro and `&endm' closes it (MASM marks them with `&' to keep them
+     * distinct from the outer's own delimiters).  Translate to %macro/%endmacro
+     * emitted as body TEXT -- no block-stack push/pop, since NASM defines the
+     * inner macro when the outer expands.  Done before substitution so the `&'
+     * prefix is still present.
+     */
+    if (masm_ppstk && masm_ppstk->is_macro) {
+        const char *t = line;
+        const char *am;
+        while (*t == ' ' || *t == '\t')
+            t++;
+        if (!nasm_strnicmp(t, "&endm", 5) &&
+            (t[5]=='\0'||t[5]==' '||t[5]=='\t'||t[5]=='\r'||t[5]=='\n')) {
+            nasm_free(line);
+            return nasm_strdup("%endmacro");
+        }
+        am = strstr(t, "&macro");
+        if (am) {
+            char meat[160], *nsub;
+            int nl = (int)(am - t), arity = 0;
+            const char *pp = am + 6;
+            while (nl > 0 && (t[nl-1]==' '||t[nl-1]=='\t'))
+                nl--;
+            snprintf(meat, sizeof meat, "%.*s", nl, t);
+            nsub = masm_subst_params(nasm_strdup(meat),
+                                     masm_ppstk->param, masm_ppstk->nparam);
+            while (*pp == ' ' || *pp == '\t')
+                pp++;
+            if (*pp) { arity = 1; for (; *pp; pp++) if (*pp == ',') arity++; }
+            if (arity)
+                snprintf(tmp, sizeof tmp, "%%macro %s 0-%d", nsub, arity);
+            else
+                snprintf(tmp, sizeof tmp, "%%macro %s 0", nsub);
+            nasm_free(nsub);
+            nasm_free(line);
+            return nasm_strdup(tmp);
+        }
+    }
+
     /* Inside a MACRO body: substitute the parameter names with %1..%N first, so
      * every later transform sees the NASM parameter form. */
     if (masm_ppstk && masm_ppstk->is_macro && masm_ppstk->nparam > 0)
@@ -1926,27 +1969,36 @@ static char *masm_pp_xform(char *line)
         }
     }
 
-    /* A parameter used as an `=' target became `%{N}' after substitution; the
-     * name-first `=' handler below cannot see it, so convert it here. */
-    if (masm_ppstk && masm_ppstk->is_macro) {
-        const char *q = line;
-        while (*q == ' ' || *q == '\t')
-            q++;
-        if (q[0] == '%' && q[1] == '{') {
-            const char *e = strchr(q, '}');
-            if (e) {
-                const char *eq = e + 1;
-                while (*eq == ' ' || *eq == '\t')
-                    eq++;
-                if (*eq == '=' && eq[1] != '=') {
-                    char ex[512];
-                    masm_xlat_ops(ex, sizeof ex, eq + 1);
-                    snprintf(tmp, sizeof tmp, "%%assign %.*s %s",
-                             (int)(e - q + 1), q, ex);
-                    nasm_free(line);
-                    masm_ppq_add(nasm_strdup(tmp));
-                    return masm_ppq_get();
-                }
+    /*
+     * A parameter used as (or pasted into) an `=' target became `%{N}' after
+     * substitution -- e.g. `%{1} = v' or `?t%{1} = v' -- which the name-first
+     * `=' handler below cannot see.  Detect a top-level single `=' whose left
+     * side contains `%{' and emit `%assign LHS RHS'.
+     */
+    if (masm_ppstk && masm_ppstk->is_macro && strstr(line, "%{")) {
+        const char *s = line, *eqp = NULL;
+        char qc = 0;
+        for (; *s; s++) {
+            if (qc) { if (*s == qc) qc = 0; continue; }
+            if (*s == '\'' || *s == '"') { qc = *s; continue; }
+            if (*s == '=' && s[1] != '=' &&
+                (s == line || (s[-1]!='='&&s[-1]!='<'&&s[-1]!='>'&&s[-1]!='!'))) {
+                eqp = s; break;
+            }
+        }
+        if (eqp) {
+            char lhs[256], ex[512], *lp = lhs;
+            size_t le;
+            snprintf(lhs, sizeof lhs, "%.*s", (int)(eqp - line), line);
+            while (*lp == ' ' || *lp == '\t') lp++;
+            le = strlen(lp);
+            while (le && (lp[le-1]==' '||lp[le-1]=='\t')) lp[--le] = '\0';
+            if (strstr(lp, "%{")) {
+                masm_xlat_ops(ex, sizeof ex, eqp + 1);
+                snprintf(tmp, sizeof tmp, "%%assign %s %s", lp, ex);
+                nasm_free(line);
+                masm_ppq_add(nasm_strdup(tmp));
+                return masm_ppq_get();
             }
         }
     }
