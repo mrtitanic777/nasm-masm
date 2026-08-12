@@ -1473,6 +1473,24 @@ restart_parse:
         }
     }
 
+    /*
+     * MASM emits a redundant operand-size prefix on a segment-register move to
+     * or from memory in 32-bit code (`mov word ptr [m], cs' -> 66 8c ..): the
+     * value moved is 16-bit, so ML prefixes it, whereas NASM drops the prefix
+     * because 8c/8e are inherently 16-bit and treats `word ptr' as redundant.
+     * Force o16 under --masm so the bytes match. (Register moves take their size
+     * from the GPR and already agree, so only the memory forms need this.)
+     */
+    if (masm_mode && bits == 32 && result->opcode == I_MOV &&
+        result->operands == 2 &&
+        result->prefixes[PPS_OSIZE] == P_none &&
+        ((is_class(REG_SREG, result->oprs[0].type) &&
+          is_class(MEMORY,   result->oprs[1].type)) ||
+         (is_class(MEMORY,   result->oprs[0].type) &&
+          is_class(REG_SREG, result->oprs[1].type)))) {
+        result->prefixes[PPS_OSIZE] = P_O16;
+    }
+
     return result;
 
 fail:
