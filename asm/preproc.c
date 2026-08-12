@@ -1619,7 +1619,42 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    {
+        /* NAME = value  ->  %assign NAME value  (redefinable numeric equate) */
+        const char *pe = p;
+        while (*pe == ' ' || *pe == '\t')
+            pe++;
+        if (*pe == '=' && pe[1] != '=') {
+            snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, pe + 1);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
+        }
+    }
+
     l2 = masm_word(&p, w2, sizeof w2);
+
+    if (l2 && !nasm_stricmp(w2, "textequ")) {
+        /* NAME TEXTEQU value  ->  %xdefine NAME value  (strip outer <>) */
+        const char *v = p;
+        char buf[512];
+        size_t vn;
+        while (*v == ' ' || *v == '\t')
+            v++;
+        snprintf(buf, sizeof buf, "%s", v);
+        vn = strlen(buf);
+        while (vn && (buf[vn-1] == ' ' || buf[vn-1] == '\t' || buf[vn-1] == '\r'))
+            buf[--vn] = '\0';
+        if (buf[0] == '<' && vn >= 2 && buf[vn-1] == '>') {
+            buf[vn-1] = '\0';
+            memmove(buf, buf + 1, vn - 1);
+        }
+        snprintf(tmp, sizeof tmp, "%%xdefine %s %s", w1, buf);
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
     if (l2 && !nasm_stricmp(w2, "macro")) {
         struct masm_ppblk *b;
         int nparam = 0, i;
