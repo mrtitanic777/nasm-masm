@@ -43,6 +43,7 @@ in a `--masm` behaviour fails the corresponding fixture.
 | `sreg` | redundant `66` on segment-register memory moves |
 | `ptrseg` | `<size> ptr [mem]` and `seg:[mem]` overrides |
 | `directives` | the directive scaffolding (`title/page/.386/segment/assume/ends/end`) end to end |
+| `rawbits` | a raw `bits 32` (no `.386`/`.MODEL`) before a `segment` still yields USE32 in the object backends |
 
 Authoring-dialect fixtures (Track B — the high-level MASM constructs used to
 *write* code) lock in the same behaviour that was validated byte-identical to

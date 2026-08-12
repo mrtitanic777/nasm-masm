@@ -1904,6 +1904,26 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    if (!nasm_stricmp(w1, "bits")) {
+        /*
+         * A raw `bits N' (rather than .386/.MODEL) must also update the struc-
+         * safe __?MASM_BITS?__ shadow, or a later `segment' would take its USE
+         * from the stale default and mis-size the code.
+         */
+        const char *b = p;
+        while (*b == ' ' || *b == '\t')
+            b++;
+        if (nasm_isdigit(*b)) {
+            int n = atoi(b);
+            snprintf(tmp, sizeof tmp, "%%assign __?MASM_BITS?__ %d", n);
+            masm_ppq_add(nasm_strdup(tmp));
+            snprintf(tmp, sizeof tmp, "bits %d", n);
+            masm_ppq_add(nasm_strdup(tmp));
+            nasm_free(line);
+            return masm_ppq_get();
+        }
+    }
+
     if (!nasm_stricmp(w1, "for")  || !nasm_stricmp(w1, "irp") ||
         !nasm_stricmp(w1, "forc") || !nasm_stricmp(w1, "irpc")) {
         /*
