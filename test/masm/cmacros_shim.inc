@@ -40,27 +40,38 @@
 %endmacro
 
 ;; ---- externals & typed labels (obj backend) ----
-%imacro externFP 1-*
-    extern %1
+;; extern<T> takes a <name,...> list (bracket-split by the front-end); the type
+;; suffix is irrelevant to the symbol, so one helper serves them all.  Strip the
+;; angle brackets and any `:type', then `extern' each name.
+%imacro __cs_extern 1-*
+    %rep %0
+        %defstr __ce_s %1
+        %strlen __ce_n __ce_s
+        %assign __ce_a 1
+        %assign __ce_b __ce_n
+        %substr __ce_c __ce_s 1,1
+        %ifidn __ce_c, '<'
+            %assign __ce_a 2
+        %endif
+        %substr __ce_c __ce_s __ce_n,1
+        %ifidn __ce_c, '>'
+            %assign __ce_b __ce_b - 1
+        %endif
+        %if __ce_b >= __ce_a
+            %substr __ce_r __ce_s __ce_a,__ce_b-__ce_a+1
+            %deftok __ce_t __ce_r
+            extern __ce_t
+        %endif
+        %rotate 1
+    %endrep
 %endmacro
-%imacro externNP 1-*
-    extern %1
-%endmacro
-%imacro externP 1-*
-    extern %1
-%endmacro
-%imacro externW 1-*
-    extern %1
-%endmacro
-%imacro externD 1-*
-    extern %1
-%endmacro
-%imacro externB 1-*
-    extern %1
-%endmacro
-%imacro externA 1-*
-    extern %1
-%endmacro
+%idefine externFP __cs_extern
+%idefine externNP __cs_extern
+%idefine externP  __cs_extern
+%idefine externW  __cs_extern
+%idefine externD  __cs_extern
+%idefine externB  __cs_extern
+%idefine externA  __cs_extern
 %imacro LabelFP 1-*
 %1:
 %endmacro

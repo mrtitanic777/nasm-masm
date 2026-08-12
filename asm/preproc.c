@@ -2014,6 +2014,52 @@ static char *masm_pp_xform(char *line)
         return nasm_strdup("");
     }
 
+    /*
+     * A bare MASM string instruction sized by its (documentation) operand:
+     * `lods byte ptr es:[si]' -> `lodsb'.  NASM has only the b/w/d/q-suffixed
+     * mnemonics, so pick the suffix from a size keyword in the operand and drop
+     * the operand.
+     */
+    {
+        static const char *const sops[] = {
+            "lods", "stos", "movs", "scas", "cmps", "ins", "outs", NULL
+        };
+        int si2;
+        for (si2 = 0; sops[si2]; si2++)
+            if (!nasm_stricmp(w1, sops[si2]))
+                break;
+        if (sops[si2]) {
+            char sfx = 0;
+            const char *r = p;
+            while (*r && !sfx) {
+                while (*r == ' ' || *r == '\t' || *r == ',')
+                    r++;
+                if (nasm_isidstart(*r)) {
+                    char sw[16];
+                    size_t n = 0;
+                    const char *s = r;
+                    while (nasm_isidchar(*s)) {
+                        if (n < sizeof sw - 1) sw[n] = *s;
+                        n++; s++;
+                    }
+                    sw[n < sizeof sw ? n : sizeof sw - 1] = '\0';
+                    r = s;
+                    if      (!nasm_stricmp(sw, "byte"))  sfx = 'b';
+                    else if (!nasm_stricmp(sw, "word"))  sfx = 'w';
+                    else if (!nasm_stricmp(sw, "dword")) sfx = 'd';
+                    else if (!nasm_stricmp(sw, "qword")) sfx = 'q';
+                } else if (*r) {
+                    r++;
+                }
+            }
+            if (sfx) {
+                snprintf(tmp, sizeof tmp, "%s%c", w1, sfx);
+                nasm_free(line);
+                return nasm_strdup(tmp);
+            }
+        }
+    }
+
     /* MASM COMMENT delim [text] ... delim  -- a block comment. */
     if (!nasm_stricmp(w1, "comment")) {
         const char *d = p;
