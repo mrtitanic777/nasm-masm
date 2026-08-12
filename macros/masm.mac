@@ -66,7 +66,6 @@ USE: masm
 %endif
 
 %idefine ptr __?masm_ptr?__
-%idefine flat __?masm_flat?__	; is %idefine really correct here?
 %idefine offset
 
 %imacro end 0+.nolist
@@ -118,6 +117,58 @@ USE: masm
 ;; --- ASSUME: segment-register assumptions are meaningless for a flat
 ;; assembler; accept and ignore so machine-generated source assembles. ---
 %imacro assume 0-*.nolist
+%endmacro
+
+;; ===================================================================
+;; Authoring dialect (Track B): the high-level MASM 6.x constructs used to
+;; WRITE new code (as opposed to the machine-generated corpus above).  The
+;; goal is functional MASM syntax -- assemble real source to working objects.
+;; Instruction encodings follow nasm's corpus-matching choices (see
+;; docs/MASM-COMPAT-ROADMAP.md), not necessarily ML byte-for-byte.
+;; ===================================================================
+
+;; Open a simplified-segment section named %1.  For the OMF backend a switch
+;; resets BITS to the segment default, so carry USE from the current CPU mode;
+;; COFF/bin are inherently flat and need no USE attribute.
+%imacro __?masm_sect?__ 1.nolist
+  %assign %%b __?BITS?__
+  %ifidn __?OUTPUT_FORMAT?__, obj
+    [section %1 use %+ %%b]
+  %else
+    [section %1]
+  %endif
+%endmacro
+
+;; .MODEL memtype [, langtype] [, stackoption]
+;; The flat model is 32-bit; the segmented models keep the current bitness and
+;; are otherwise accepted.  A langtype (stdcall/c/pascal/...) is recorded for
+;; PROC/INVOKE (Track B, later) in __?MASM_LANG?__.
+%imacro .model 1-*.nolist
+  %ifidni %1, flat
+    [bits 32]
+  %endif
+  %if %0 >= 2
+    %idefine __?MASM_LANG?__ %2
+  %endif
+%endmacro
+
+;; Simplified segment directives.  Flat/32-bit code maps to NASM's standard
+;; sections (correct default attributes on every backend).
+%imacro .code 0-1.nolist
+  %ifempty %1
+    __?masm_sect?__ .text
+  %else
+    __?masm_sect?__ %1
+  %endif
+%endmacro
+%imacro .data 0-1.nolist
+  __?masm_sect?__ .data
+%endmacro
+%imacro .const 0-1.nolist
+  __?masm_sect?__ .rodata
+%endmacro
+%imacro .stack 0-1.nolist
+  ; flat model: the OS provides the stack; accept and ignore
 %endmacro
 
 	default rel
