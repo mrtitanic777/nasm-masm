@@ -59,6 +59,7 @@ real ML 6.11:
 | `hll_macro` | `MACRO`/`ENDM`, `REPT`, `TEXTEQU`, `=` (`= ML`) |
 | `hll_for` | `FOR`/`IRP` list iteration and `EXITM` (`= ML`) |
 | `hll_cond` | `IF`/`IFE`/`IFDEF`/`IFNDEF`/`ELSE`/`ELSEIF`/`ENDIF` assembly-time conditionals (`= ML`) |
+| `hll_ifb` | `IFB`/`IFNB`, `IFIDN`/`IFDIF` text conditionals, optional macro params (`= ML`) |
 | `hll_struct` | `STRUCT`/`ENDS` (incl. `DUP` arrays, nested), `[reg].STRUCT.member`, `SIZEOF STRUCT` (`= ML`) |
 | `hll_struct_inst` | static instances `label S <i,...>` + instance-member access `label.m` (load/store/word/rmw = ML) |
 | `hll_expr` | expression operators `TYPE`/`SIZEOF` (struct + primitive), `LOW`/`HIGH`/`LOWWORD`/`HIGHWORD`, radix `1010b`/`17q` (`= ML`) |

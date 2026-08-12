@@ -1999,6 +1999,57 @@ static char *masm_pp_xform(char *line)
             masm_ppq_add(nasm_strdup("%endif"));
             return masm_ppq_get();
         }
+        /*
+         * Blank-argument and text-comparison conditionals.  MASM wraps text
+         * arguments in <...>; NASM's %ifempty/%ifidn do not, so strip the
+         * angle brackets from `rest' as we forward it.
+         */
+        {
+            const char *cdir = NULL;
+            if      (!nasm_stricmp(w1, "ifb")     || !nasm_stricmp(w1, "ifidn0"))
+                cdir = "%ifempty";
+            else if (!nasm_stricmp(w1, "ifnb"))   cdir = "%ifnempty";
+            else if (!nasm_stricmp(w1, "ifidn"))  cdir = "%ifidn";
+            else if (!nasm_stricmp(w1, "ifidni")) cdir = "%ifidni";
+            else if (!nasm_stricmp(w1, "ifdif"))  cdir = "%ifnidn";
+            else if (!nasm_stricmp(w1, "ifdifi")) cdir = "%ifnidni";
+            if (cdir) {
+                char stripped[256];
+                size_t si = 0;
+                const char *r = rest;
+                for (; *r && si + 1 < sizeof stripped; r++)
+                    if (*r != '<' && *r != '>')
+                        stripped[si++] = *r;
+                stripped[si] = '\0';
+                snprintf(tmp, sizeof tmp, "%s %s", cdir, stripped);
+                nasm_free(line);
+                masm_ppq_add(nasm_strdup(tmp));
+                return masm_ppq_get();
+            }
+        }
+        /* Diagnostics: the .ERR family -> %error, guarded for the conditional
+         * variants.  ECHO/%OUT (informational console output) are dropped. */
+        if (!nasm_stricmp(w1, ".err")) {
+            snprintf(tmp, sizeof tmp, "%%error %s", rest);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
+        }
+        if (!nasm_stricmp(w1, ".erre") || !nasm_stricmp(w1, ".errnz")) {
+            /* .ERRE expr: error if expr == 0;  .ERRNZ expr: error if expr != 0 */
+            const char *cmp = !nasm_stricmp(w1, ".erre") ? "==" : "!=";
+            snprintf(tmp, sizeof tmp, "%%if (%s) %s 0", rest, cmp);
+            masm_ppq_add(nasm_strdup(tmp));
+            masm_ppq_add(nasm_strdup("%error assertion failed"));
+            masm_ppq_add(nasm_strdup("%endif"));
+            nasm_free(line);
+            return masm_ppq_get();
+        }
+        if (!nasm_stricmp(w1, "echo") || !nasm_stricmp(w1, "%out") ||
+            !nasm_stricmp(w1, ".radix")) {
+            nasm_free(line);            /* informational / accepted-and-ignored */
+            return nasm_strdup("");
+        }
     }
 
     {
@@ -2152,7 +2203,12 @@ static char *masm_pp_xform(char *line)
                 break;
         }
 
-        snprintf(tmp, sizeof tmp, "%%macro %s %d", w1, nparam);
+        /* MASM macro parameters are all optional (an omitted one is blank, as
+         * IFB tests), so declare a 0..nparam range rather than an exact count. */
+        if (nparam > 0)
+            snprintf(tmp, sizeof tmp, "%%macro %s 0-%d", w1, nparam);
+        else
+            snprintf(tmp, sizeof tmp, "%%macro %s 0", w1);
         masm_ppq_add(nasm_strdup(tmp));
         for (i = 0; i < nparam; i++) {
             snprintf(tmp, sizeof tmp, "%%define %s %%%d", param[i], i + 1);
