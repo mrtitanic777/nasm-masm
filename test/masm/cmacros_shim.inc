@@ -9,10 +9,72 @@
 ;; Written as raw NASM directives (this file is our own), so it is not subject to
 ;; the MASM->NASM front-end translation.
 
+;; ---- segments & groups ----
+;; createSeg realname, logicalname, align, combine, class, group
+;;   Declares a segment and binds the logical name used by sBegin, plus the
+;;   name&OFFSET / name&BASE equates cmacros code may reference (0 in flat/obj).
+%imacro createSeg 2-*
+    %define __cs_%2 %1
+    %xdefine %[%2]OFFSET 0
+    %xdefine %[%2]BASE %1
+%endmacro
+%imacro defGrp 0-*
+%endmacro
+%imacro assumes 0-*
+%endmacro
+
 %imacro sBegin 1
-    [section %1]
+    %ifdef __cs_%1
+        [section %[__cs_%1]]
+    %else
+        [section %1]
+    %endif
 %endmacro
 %imacro sEnd 0-1
+%endmacro
+
+%imacro DataBegin 0-*
+    [section _DATA]
+%endmacro
+%imacro DataEnd 0-*
+%endmacro
+
+;; ---- externals & typed labels (obj backend) ----
+%imacro externFP 1-*
+    extern %1
+%endmacro
+%imacro externNP 1-*
+    extern %1
+%endmacro
+%imacro externP 1-*
+    extern %1
+%endmacro
+%imacro externW 1-*
+    extern %1
+%endmacro
+%imacro externD 1-*
+    extern %1
+%endmacro
+%imacro externB 1-*
+    extern %1
+%endmacro
+%imacro externA 1-*
+    extern %1
+%endmacro
+%imacro LabelFP 1-*
+%1:
+%endmacro
+%imacro labelFP 1-*
+%1:
+%endmacro
+%imacro labelNP 1-*
+%1:
+%endmacro
+%imacro labelW 1-*
+%1:
+%endmacro
+%imacro labelB 1-*
+%1:
 %endmacro
 
 ;; ---- procedure frame state ----
@@ -100,3 +162,6 @@
         ret
     %endif
 %endmacro
+
+;; cProcVDO -- a cProc variant used by some kernel modules; same frame here.
+%idefine cProcVDO cProc

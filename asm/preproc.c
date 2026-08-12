@@ -2168,7 +2168,20 @@ static char *masm_pp_xform(char *line)
         while (fl && (fn[fl-1]==' '||fn[fl-1]=='\t'||fn[fl-1]=='\r'||fn[fl-1]=='\n'))
             fn[--fl] = '\0';
         if (fl) {
-            snprintf(tmp, sizeof tmp, "%%include \"%s\"", fn);
+            /*
+             * cmacros.inc builds its procedure/segment macros with generated
+             * (nested-&-macro) machinery that NASM's macro model cannot express.
+             * Transparently substitute our NASM-native shim, which provides the
+             * same call interface.  (Basename match, case-insensitive.)
+             */
+            const char *base = fn, *s2;
+            for (s2 = fn; *s2; s2++)
+                if (*s2 == '/' || *s2 == '\\')
+                    base = s2 + 1;
+            if (!nasm_stricmp(base, "cmacros.inc"))
+                snprintf(tmp, sizeof tmp, "%%include \"cmacros_shim.inc\"");
+            else
+                snprintf(tmp, sizeof tmp, "%%include \"%s\"", fn);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
@@ -2782,6 +2795,33 @@ static char *masm_pp_xform(char *line)
         }
         nasm_free(line);
         return masm_ppq_get();
+    }
+
+    if (l2 && !nasm_stricmp(w2, "equ")) {
+        /*
+         * NAME EQU <text>  is a MASM text equate (redefinable text alias) ->
+         * %xdefine.  A numeric/label EQU (no angle brackets) is left for NASM's
+         * own `equ'.
+         */
+        const char *v = p;
+        while (*v == ' ' || *v == '\t')
+            v++;
+        if (*v == '<') {
+            char buf[512];
+            size_t vn;
+            snprintf(buf, sizeof buf, "%s", v);
+            vn = strlen(buf);
+            while (vn && (buf[vn-1]==' '||buf[vn-1]=='\t'||buf[vn-1]=='\r'))
+                buf[--vn] = '\0';
+            if (buf[0] == '<' && vn >= 2 && buf[vn-1] == '>') {
+                buf[vn-1] = '\0';
+                memmove(buf, buf + 1, vn - 1);
+            }
+            snprintf(tmp, sizeof tmp, "%%xdefine %s %s", w1, buf);
+            nasm_free(line);
+            masm_ppq_add(nasm_strdup(tmp));
+            return masm_ppq_get();
+        }
     }
 
     if (l2 && !nasm_stricmp(w2, "textequ")) {
