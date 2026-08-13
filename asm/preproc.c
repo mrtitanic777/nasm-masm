@@ -2344,9 +2344,9 @@ static char *masm_pp_xform(char *line)
                  * can never be equal -- no direct self-reference cycle.
                  */
                 if (masm_atom_ref(xr))
-                    snprintf(tmp, sizeof tmp, "%%define %s %s", lp, xr);
+                    snprintf(tmp, sizeof tmp, "%%idefine %s %s", lp, xr);
                 else
-                    snprintf(tmp, sizeof tmp, "%%assign %s %s", lp, ex);
+                    snprintf(tmp, sizeof tmp, "%%iassign %s %s", lp, ex);
                 nasm_free(line);
                 masm_ppq_add(nasm_strdup(tmp));
                 return masm_ppq_get();
@@ -2454,7 +2454,7 @@ static char *masm_pp_xform(char *line)
         if (mtl && !nasm_stricmp(mtype, "ends")) {
             bool uni = masm_sdef_cur && masm_sdef_cur->is_union;
             if (uni) {                          /* emit the union size define */
-                snprintf(tmp, sizeof tmp, "%%define %s_size %d",
+                snprintf(tmp, sizeof tmp, "%%idefine %s_size %d",
                          masm_sdef_cur->name, masm_sdef_cur->usize);
                 masm_ppq_add(nasm_strdup(tmp));
             }
@@ -2532,7 +2532,7 @@ static char *masm_pp_xform(char *line)
             }
             if (masm_sdef_cur && masm_sdef_cur->is_union) {
                 /* union member: fixed at offset 0 */
-                snprintf(tmp, sizeof tmp, "%%define %s.%s 0",
+                snprintf(tmp, sizeof tmp, "%%idefine %s.%s 0",
                          masm_sdef_cur->name, w1);
             } else if (res)
                 snprintf(tmp, sizeof tmp, ".%s: %s %d", w1, res, count);
@@ -2545,7 +2545,7 @@ static char *masm_pp_xform(char *line)
              * Alias it to the NASM struc offset symbol STRUCT.field.
              */
             if (masm_sdef_cur && !masm_sdef_cur->is_union) {
-                snprintf(tmp, sizeof tmp, "%%define %s %s.%s",
+                snprintf(tmp, sizeof tmp, "%%idefine %s %s.%s",
                          w1, masm_sdef_cur->name, w1);
                 masm_ppq_add(nasm_strdup(tmp));
             }
@@ -2957,9 +2957,10 @@ static char *masm_pp_xform(char *line)
              * `n = n + 1'), and those are pasted into identifiers (`foo&n'),
              * where a textual/parenthesised value would break.  A forward
              * reference in a `=' expression is the single-pass preprocessor's
-             * boundary against MASM's two passes.
+             * boundary against MASM's two passes.  %iassign, not %assign:
+             * MASM symbols are case-insensitive (matching the label folding).
              */
-            snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, ex2);
+            snprintf(tmp, sizeof tmp, "%%iassign %s %s", w1, ex2);
             nasm_free(ex2);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
@@ -3041,7 +3042,7 @@ static char *masm_pp_xform(char *line)
             unsigned mask;
             pos -= width;
             mask = (width >= 32 ? 0xffffffffu : ((1u << width) - 1)) << pos;
-            snprintf(tmp, sizeof tmp, "%%define %s %d", fld[i].nm, pos);
+            snprintf(tmp, sizeof tmp, "%%idefine %s %d", fld[i].nm, pos);
             masm_ppq_add(nasm_strdup(tmp));
             snprintf(tmp, sizeof tmp, "%%define MASK_%s 0%08Xh", fld[i].nm, mask);
             masm_ppq_add(nasm_strdup(tmp));
@@ -3054,7 +3055,7 @@ static char *masm_pp_xform(char *line)
             if (sd->tail) sd->tail->next = mb; else sd->head = mb;
             sd->tail = mb;
         }
-        snprintf(tmp, sizeof tmp, "%%define %s_size %d", w1,
+        snprintf(tmp, sizeof tmp, "%%idefine %s_size %d", w1,
                  total <= 8 ? 1 : total <= 16 ? 2 : 4);
         masm_ppq_add(nasm_strdup(tmp));
         sd->next = masm_sdefs;
@@ -3091,7 +3092,7 @@ static char *masm_pp_xform(char *line)
         }
         (void)first;
         rhs[ri] = '\0';
-        snprintf(tmp, sizeof tmp, "%%xdefine %s %s", w1, rhs);
+        snprintf(tmp, sizeof tmp, "%%ixdefine %s %s", w1, rhs);
         nasm_free(line);
         masm_ppq_add(nasm_strdup(tmp));
         return masm_ppq_get();
@@ -3137,7 +3138,7 @@ static char *masm_pp_xform(char *line)
                 if (hit)
                     pos = (int)(hit - s1) + 1;
             }
-            snprintf(tmp, sizeof tmp, "%%assign %s %d", w1, pos);
+            snprintf(tmp, sizeof tmp, "%%iassign %s %d", w1, pos);
         }
         nasm_free(line);
         masm_ppq_add(nasm_strdup(tmp));
@@ -3157,7 +3158,7 @@ static char *masm_pp_xform(char *line)
                 else if (*t == '>') { if (--depth == 0) break; }
                 n++;
             }
-            snprintf(tmp, sizeof tmp, "%%assign %s %d", w1, n);
+            snprintf(tmp, sizeof tmp, "%%iassign %s %d", w1, n);
             masm_ppq_add(nasm_strdup(tmp));
         } else {          /* a text macro: stringify it, then measure */
             snprintf(tmp, sizeof tmp, "%%defstr __masm_sstmp %s", s);
@@ -3227,7 +3228,7 @@ static char *masm_pp_xform(char *line)
         }
         snprintf(tmp, sizeof tmp, "%%idefine %s %s", w1, dir ? dir : "dd");
         masm_ppq_add(nasm_strdup(tmp));
-        snprintf(tmp, sizeof tmp, "%%define %s_size %d", w1, sz);
+        snprintf(tmp, sizeof tmp, "%%idefine %s_size %d", w1, sz);
         masm_ppq_add(nasm_strdup(tmp));
         nasm_free(line);
         return masm_ppq_get();
@@ -3352,7 +3353,7 @@ static char *masm_pp_xform(char *line)
                 buf[vn-1] = '\0';
                 memmove(buf, buf + 1, vn - 1);
             }
-            snprintf(tmp, sizeof tmp, "%%xdefine %s %s", w1, buf);
+            snprintf(tmp, sizeof tmp, "%%ixdefine %s %s", w1, buf);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
@@ -3381,12 +3382,12 @@ static char *masm_pp_xform(char *line)
                  * `+ field]'.
                  */
                 char *mr = masm_rewrite_line(nasm_strdup(xr));
-                snprintf(tmp, sizeof tmp, "%%define %s %s", w1, mr);
+                snprintf(tmp, sizeof tmp, "%%idefine %s %s", w1, mr);
                 nasm_free(mr);
             } else if (masm_ident_only(xr) &&
                 (!nasm_stricmp(xr, "short") || !nasm_stricmp(xr, "near") ||
                  !nasm_stricmp(xr, "far")))
-                snprintf(tmp, sizeof tmp, "%%define %s %s", w1, xr);
+                snprintf(tmp, sizeof tmp, "%%idefine %s %s", w1, xr);
             else {
                 /* Rewrite operators the same way an instruction operand is
                  * (SIZE/SIZEOF/TYPE/`.member'): `DSC_LEN equ (size DscPtr)'
@@ -3416,7 +3417,7 @@ static char *masm_pp_xform(char *line)
             buf[vn-1] = '\0';
             memmove(buf, buf + 1, vn - 1);
         }
-        snprintf(tmp, sizeof tmp, "%%xdefine %s %s", w1, buf);
+        snprintf(tmp, sizeof tmp, "%%ixdefine %s %s", w1, buf);
         nasm_free(line);
         masm_ppq_add(nasm_strdup(tmp));
         return masm_ppq_get();
