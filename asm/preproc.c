@@ -2259,10 +2259,10 @@ static char *masm_pp_xform(char *line)
             while (*pp == ' ' || *pp == '\t')
                 pp++;
             if (*pp) { arity = 1; for (; *pp; pp++) if (*pp == ',') arity++; }
-            if (arity)
-                snprintf(tmp, sizeof tmp, "%%macro %s 0-%d", nsub, arity);
+            if (arity)                  /* %imacro: case-insensitive, like MASM */
+                snprintf(tmp, sizeof tmp, "%%imacro %s 0-%d", nsub, arity);
             else
-                snprintf(tmp, sizeof tmp, "%%macro %s 0", nsub);
+                snprintf(tmp, sizeof tmp, "%%imacro %s 0", nsub);
             nasm_free(nsub);
             nasm_free(line);
             return nasm_strdup(tmp);
@@ -3455,11 +3455,12 @@ static char *masm_pp_xform(char *line)
         }
 
         /* MASM macro parameters are all optional (an omitted one is blank, as
-         * IFB tests), so declare a 0..nparam range rather than an exact count. */
+         * IFB tests), so declare a 0..nparam range rather than an exact count.
+         * %imacro (not %macro): MASM macro names are case-insensitive too. */
         if (nparam > 0)
-            snprintf(tmp, sizeof tmp, "%%macro %s 0-%d", w1, nparam);
+            snprintf(tmp, sizeof tmp, "%%imacro %s 0-%d", w1, nparam);
         else
-            snprintf(tmp, sizeof tmp, "%%macro %s 0", w1);
+            snprintf(tmp, sizeof tmp, "%%imacro %s 0", w1);
         masm_ppq_add(nasm_strdup(tmp));
         /* Parameters are substituted textually in the body (masm_subst_params),
          * so no `%define param %N' smacros are emitted here. */
