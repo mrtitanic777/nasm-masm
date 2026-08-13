@@ -342,6 +342,39 @@
 %imacro errn$ 1-*
 %endmacro
 
+;; DKernelThunk api [, framebytes] -- a WOW (Windows-on-Windows) 16-bit API
+;; thunk stub.  The real macro lives in a WOW kernel include (wowkc.inc) absent
+;; from this source tree; this functional equivalent lets kthunks.asm assemble:
+;; publish the entry, tag it with a running thunk id, far-call the WOW32
+;; dispatcher (WOW16Call), and return (cleaning `framebytes' of args if given).
+;; Not byte-validated -- kthunks is not in the parity corpus.
+%assign __dkt_id 0
+%imacro DKernelThunk 1-2
+    global %1
+  %1:
+    mov ax, __dkt_id
+    %assign __dkt_id __dkt_id + 1
+    call WOW16Call
+    %if %0 >= 2
+        retf %2
+    %else
+        retf
+    %endif
+%endmacro
+;; KernelThunk -- the non-"D" sibling (GetProfileString et al); same stub.
+%imacro KernelThunk 1-2
+    global %1
+  %1:
+    mov ax, __dkt_id
+    %assign __dkt_id __dkt_id + 1
+    call WOW16Call
+    %if %0 >= 2
+        retf %2
+    %else
+        retf
+    %endif
+%endmacro
+
 ;; cCall func, <arg,...> [, convention] -- push args left-to-right (PASCAL) then
 ;; call.  The <...> group arrives bracket-split (`<ax', `bx>'); strip and push.
 %imacro cCall 1-*

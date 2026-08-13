@@ -1770,6 +1770,15 @@ static char *masm_rewrite_line(char *line)
     o = out;
 
     while (*p) {
+        /* MASM `%(expr)' immediate-evaluation operator -> just `(expr)': the
+         * `%' forces compile-time evaluation, which NASM does anyway.  (`%('
+         * is not valid NASM, so this is unambiguous.) */
+        if (*p == '%' && p[1] == '(') {
+            *o++ = '(';
+            p += 2;
+            changed = true;
+            continue;
+        }
         /* MASM adjacent-bracket addressing `[a][b]' -> `[a + b]' (the brackets
          * concatenate as addition): drop the `][' and insert ` + '. */
         if (*p == ']' && p[1] == '[') {
