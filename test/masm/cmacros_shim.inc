@@ -12,10 +12,14 @@
 ;; ---- segments & groups ----
 ;; createSeg realname, logicalname, align, combine, class, group
 ;;   Declares a segment and binds the logical name used by sBegin, plus the
-;;   name&OFFSET / name&BASE equates cmacros code may reference (0 in flat/obj).
+;;   name&OFFSET / name&BASE equates cmacros code may reference.
+;;   <ln>OFFSET is the segment-relative-offset OPERATOR: `codeOFFSET foo' means
+;;   "offset of foo" (213 dataOFFSET + 109 codeOFFSET uses), which in flat/obj
+;;   is just `foo'.  So define <ln>OFFSET as an EMPTY (case-insensitive) macro
+;;   that vanishes before its label.  <ln>BASE is the segment/selector value.
 %imacro createSeg 2-*
     %define __cs_%2 %1
-    %xdefine %[%2]OFFSET 0
+    %idefine %[%2]OFFSET
     %xdefine %[%2]BASE %1
 %endmacro
 %imacro defGrp 0-*
