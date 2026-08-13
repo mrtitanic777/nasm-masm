@@ -2554,6 +2554,70 @@ static char *masm_pp_xform(char *line)
         return nasm_strdup("");
     }
 
+    /*
+     * `PUBLIC a, b, ...' -> `global a, b, ...'.  MASM also allows `PUBLIC
+     * name:type' (proc/abs qualifiers); NASM's `global' rejects a bare `:type'
+     * here, so drop any `:qualifier' from each name.
+     */
+    if (!nasm_stricmp(w1, "public")) {
+        char names[512];
+        size_t ni = 0;
+        const char *r = p;
+        bool skip = false;
+        while (*r == ' ' || *r == '\t')
+            r++;
+        for (; *r && *r != ';' && ni + 1 < sizeof names; r++) {
+            if (*r == ':') { skip = true; continue; }
+            if (*r == ',') { skip = false; names[ni++] = ','; continue; }
+            if (skip) continue;
+            names[ni++] = *r;
+        }
+        names[ni] = '\0';
+        while (ni && (names[ni-1]==' '||names[ni-1]=='\t'||names[ni-1]==','))
+            names[--ni] = '\0';
+        if (ni)
+            snprintf(tmp, sizeof tmp, "global %s", names);
+        else
+            tmp[0] = '\0';
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
+    /* `EXTRN name:type, ...' is the MASM spelling of NASM's `extern'; the
+     * `:type' is documentation NASM does not need, so strip it.  (Only the
+     * MASM `extrn' spelling -- native `extern sym:type' is left to NASM.) */
+    if (!nasm_stricmp(w1, "extrn")) {
+        char names[512];
+        size_t ni = 0;
+        const char *r = p;
+        bool skip = false;
+        while (*r == ' ' || *r == '\t')
+            r++;
+        for (; *r && *r != ';' && ni + 1 < sizeof names; r++) {
+            if (*r == ':') { skip = true; continue; }
+            if (*r == ',') { skip = false; names[ni++] = ','; continue; }
+            if (skip) continue;
+            names[ni++] = *r;
+        }
+        names[ni] = '\0';
+        while (ni && (names[ni-1]==' '||names[ni-1]=='\t'||names[ni-1]==','))
+            names[--ni] = '\0';
+        if (ni)
+            snprintf(tmp, sizeof tmp, "extern %s", names);
+        else
+            tmp[0] = '\0';
+        nasm_free(line);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
+    /* Segment-register assumptions carry no encoding in flat/obj output. */
+    if (!nasm_stricmp(w1, "assume") || !nasm_stricmp(w1, "assumes")) {
+        nasm_free(line);
+        return nasm_strdup("");
+    }
+
     if (!nasm_stricmp(w1, "bits")) {
         /*
          * A raw `bits N' (rather than .386/.MODEL) must also update the struc-

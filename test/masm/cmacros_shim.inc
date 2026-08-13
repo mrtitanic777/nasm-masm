@@ -39,6 +39,80 @@
 %imacro DataEnd 0-*
 %endmacro
 
+;; global<T>/static<T> name [, init [, count]] -- declare a typed data cell.
+;; global<T> also publishes the symbol.  init `?' (or omitted) means zero-fill;
+;; count repeats the cell.  __cs_ddef does the body; the wrappers pick the unit.
+%imacro __cs_ddef 3-5
+    ;; %1 = directive (db/dw/dd), %2 = name, %3 = count, %4 = init(optional)
+    %2:
+    %if %0 >= 4
+        %ifidn %4, ?
+            times %3 %1 0
+        %else
+            times %3 %1 %4
+        %endif
+    %else
+        times %3 %1 0
+    %endif
+%endmacro
+%imacro globalB 1-3
+    global %1
+    %if %0 >= 3
+        __cs_ddef db, %1, %3, %2
+    %elif %0 >= 2
+        __cs_ddef db, %1, 1, %2
+    %else
+        __cs_ddef db, %1, 1
+    %endif
+%endmacro
+%imacro globalW 1-3
+    global %1
+    %if %0 >= 3
+        __cs_ddef dw, %1, %3, %2
+    %elif %0 >= 2
+        __cs_ddef dw, %1, 1, %2
+    %else
+        __cs_ddef dw, %1, 1
+    %endif
+%endmacro
+%imacro globalD 1-3
+    global %1
+    %if %0 >= 3
+        __cs_ddef dd, %1, %3, %2
+    %elif %0 >= 2
+        __cs_ddef dd, %1, 1, %2
+    %else
+        __cs_ddef dd, %1, 1
+    %endif
+%endmacro
+%imacro staticB 1-3
+    %if %0 >= 3
+        __cs_ddef db, %1, %3, %2
+    %elif %0 >= 2
+        __cs_ddef db, %1, 1, %2
+    %else
+        __cs_ddef db, %1, 1
+    %endif
+%endmacro
+%imacro staticW 1-3
+    %if %0 >= 3
+        __cs_ddef dw, %1, %3, %2
+    %elif %0 >= 2
+        __cs_ddef dw, %1, 1, %2
+    %else
+        __cs_ddef dw, %1, 1
+    %endif
+%endmacro
+%imacro staticD 1-3
+    %if %0 >= 3
+        __cs_ddef dd, %1, %3, %2
+    %elif %0 >= 2
+        __cs_ddef dd, %1, 1, %2
+    %else
+        __cs_ddef dd, %1, 1
+    %endif
+%endmacro
+
 ;; ---- externals & typed labels (obj backend) ----
 ;; extern<T> takes a <name,...> list (bracket-split by the front-end); the type
 ;; suffix is irrelevant to the symbol, so one helper serves them all.  Strip the
