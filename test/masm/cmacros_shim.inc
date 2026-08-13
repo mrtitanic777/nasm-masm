@@ -164,6 +164,23 @@
     %xdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 4
 %endmacro
+;; DP/CP = data/code far pointer (4), Q = qword (8), T = 6-byte far pointer.
+%imacro parmDP 1
+    %xdefine %1 [bp + __cp_parmo]
+    %assign __cp_parmo __cp_parmo + 4
+%endmacro
+%imacro parmCP 1
+    %xdefine %1 [bp + __cp_parmo]
+    %assign __cp_parmo __cp_parmo + 4
+%endmacro
+%imacro parmQ 1
+    %xdefine %1 [bp + __cp_parmo]
+    %assign __cp_parmo __cp_parmo + 8
+%endmacro
+%imacro parmT 1
+    %xdefine %1 [bp + __cp_parmo]
+    %assign __cp_parmo __cp_parmo + 6
+%endmacro
 
 %imacro localB 1
     %assign __cp_localo __cp_localo + 2
@@ -176,6 +193,31 @@
 %imacro localD 1
     %assign __cp_localo __cp_localo + 4
     %xdefine %1 bp - __cp_localo
+%endmacro
+;; A buffer/pointer local (localV/DP/CP/Q/T) is taken by ADDRESS (`lea bx,buf')
+;; or loaded whole (`les di,ptr'), i.e. used WITHOUT brackets -- so bind it to
+;; the memory operand [bp-off] (unlike a scalar local, which is used as `[v]'
+;; and binds to the bare offset).  The name points at the buffer's low byte.
+;; localV name,size -- size may be a MASM hex `NNh'.
+%imacro localV 2
+    %assign __cp_localo __cp_localo + %2
+    %xdefine %1 [bp - __cp_localo]
+%endmacro
+%imacro localDP 1
+    %assign __cp_localo __cp_localo + 4
+    %xdefine %1 [bp - __cp_localo]
+%endmacro
+%imacro localCP 1
+    %assign __cp_localo __cp_localo + 4
+    %xdefine %1 [bp - __cp_localo]
+%endmacro
+%imacro localQ 1
+    %assign __cp_localo __cp_localo + 8
+    %xdefine %1 [bp - __cp_localo]
+%endmacro
+%imacro localT 1
+    %assign __cp_localo __cp_localo + 6
+    %xdefine %1 [bp - __cp_localo]
 %endmacro
 
 ;; cBegin -- prologue.  cEnd -- epilogue (retf for FAR, ret for NEAR).
