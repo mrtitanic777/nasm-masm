@@ -2744,6 +2744,15 @@ static char *masm_pp_xform(char *line)
             char *ex2;
             masm_xlat_ops(ex, sizeof ex, masm_skip_typeptr(pe + 1));
             ex2 = masm_rewrite_line(nasm_strdup(ex));  /* SIZE/SIZEOF/... */
+            /*
+             * A MASM `=' is a redefinable numeric equate -> %assign (evaluated
+             * now).  We do NOT bind it lazily (%define) to tolerate a forward
+             * reference in the RHS: `=' also spells counters (`n = 0' then
+             * `n = n + 1'), and those are pasted into identifiers (`foo&n'),
+             * where a textual/parenthesised value would break.  A forward
+             * reference in a `=' expression is the single-pass preprocessor's
+             * boundary against MASM's two passes.
+             */
             snprintf(tmp, sizeof tmp, "%%assign %s %s", w1, ex2);
             nasm_free(ex2);
             nasm_free(line);
