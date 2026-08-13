@@ -2594,6 +2594,10 @@ static char *masm_pp_xform(char *line)
             f++;
         snprintf(fn, sizeof fn, "%s", f);
         fl = strlen(fn);
+        {                               /* strip a trailing `;' comment */
+            char *sc = strchr(fn, ';');
+            if (sc) { *sc = '\0'; fl = (size_t)(sc - fn); }
+        }
         while (fl && (fn[fl-1]==' '||fn[fl-1]=='\t'||fn[fl-1]=='\r'||fn[fl-1]=='\n'))
             fn[--fl] = '\0';
         if (fl) {
@@ -3375,8 +3379,14 @@ static char *masm_pp_xform(char *line)
                 (!nasm_stricmp(xr, "short") || !nasm_stricmp(xr, "near") ||
                  !nasm_stricmp(xr, "far")))
                 snprintf(tmp, sizeof tmp, "%%define %s %s", w1, xr);
-            else
-                snprintf(tmp, sizeof tmp, "%s equ %s", w1, xr);
+            else {
+                /* Rewrite operators the same way an instruction operand is
+                 * (SIZE/SIZEOF/TYPE/`.member'): `DSC_LEN equ (size DscPtr)'
+                 * -> `... equ (DscPtr_size)'. */
+                char *rr = masm_rewrite_line(nasm_strdup(xr));
+                snprintf(tmp, sizeof tmp, "%s equ %s", w1, rr);
+                nasm_free(rr);
+            }
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
             return masm_ppq_get();
