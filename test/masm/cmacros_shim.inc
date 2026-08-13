@@ -14,12 +14,14 @@
 ;;   Declares a segment and binds the logical name used by sBegin, plus the
 ;;   name&OFFSET / name&BASE equates cmacros code may reference.
 ;;   <ln>OFFSET is the segment-relative-offset OPERATOR: `codeOFFSET foo' means
-;;   "offset of foo" (213 dataOFFSET + 109 codeOFFSET uses), which in flat/obj
-;;   is just `foo'.  So define <ln>OFFSET as an EMPTY (case-insensitive) macro
-;;   that vanishes before its label.  <ln>BASE is the segment/selector value.
+;;   "offset of foo" (213 dataOFFSET + 109 codeOFFSET uses).  Bind it to NASM's
+;;   OFFSET keyword (case-insensitive) so it yields foo's ADDRESS -- and, for a
+;;   DATA label, suppresses the MASM data-label->[mem] conversion that a bare
+;;   `foo' would trigger (`mov ax,codeOFFSET szName' must load the address, not
+;;   the contents).  <ln>BASE is the segment/selector value.
 %imacro createSeg 2-*
     %define __cs_%2 %1
-    %idefine %[%2]OFFSET
+    %idefine %[%2]OFFSET OFFSET
     %xdefine %[%2]BASE %1
 %endmacro
 %imacro defGrp 0-*
