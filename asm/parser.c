@@ -52,6 +52,16 @@ static int masm_type_get(const char *name)
     return loc ? (int)(intptr_t)*loc : 0;
 }
 
+/* Public entry (see nasm.h): let the --masm preprocessor record the type of a
+ * typed EXTRN / externW-D-B so a cross-module data label reads as its contents.
+ * Idempotent, and the table persists across passes, so repeated calls are fine.
+ */
+void masm_type_note(const char *name, int size)
+{
+    if (size > 0)
+        masm_type_set(name, size);
+}
+
 static opflags_t masm_size_bits(int size)
 {
     switch (size) {

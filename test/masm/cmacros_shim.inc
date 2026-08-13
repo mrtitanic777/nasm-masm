@@ -43,16 +43,18 @@
 ;; global<T> also publishes the symbol.  init `?' (or omitted) means zero-fill;
 ;; count repeats the cell.  __cs_ddef does the body; the wrappers pick the unit.
 %imacro __cs_ddef 3-5
-    ;; %1 = directive (db/dw/dd), %2 = name, %3 = count, %4 = init(optional)
-    %2:
+    ;; %1 = directive (db/dw/dd), %2 = name, %3 = count, %4 = init(optional).
+    ;; The label MUST share the data directive's line: that is what registers
+    ;; the MASM data-label type (so a bare `curTDB' reads as `[curTDB]' and
+    ;; `mov ds,curTDB' assembles).  A label on its own line does not register.
     %if %0 >= 4
         %ifidn %4, ?
-            times %3 %1 0
+            %2: times %3 %1 0
         %else
-            times %3 %1 %4
+            %2: times %3 %1 %4
         %endif
     %else
-        times %3 %1 0
+        %2: times %3 %1 0
     %endif
 %endmacro
 %imacro globalB 1-3

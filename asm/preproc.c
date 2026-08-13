@@ -2102,6 +2102,74 @@ static void masm_emit_opt_guards(const char *expr)
  * String literals and trailing `;' comments are left untouched.  Regular-code
  * only: inside a macro body one label would be baked into every expansion.
  */
+/* MASM data-type keyword -> element size in bytes (0 = not a data type). */
+static int masm_type_from_word(const char *w, size_t n)
+{
+    if (n == 4 && !nasm_strnicmp(w, "byte",  4)) return 1;
+    if (n == 4 && !nasm_strnicmp(w, "word",  4)) return 2;
+    if (n == 5 && !nasm_strnicmp(w, "dword", 5)) return 4;
+    if (n == 5 && !nasm_strnicmp(w, "fword", 5)) return 6;
+    if (n == 5 && !nasm_strnicmp(w, "qword", 5)) return 8;
+    if (n == 5 && !nasm_strnicmp(w, "tbyte", 5)) return 10;
+    return 0;                           /* ABS / NEAR / FAR / PROC / ptr */
+}
+
+/*
+ * Emit `extern NAME' for each name in a MASM external declaration list, and
+ * register its MASM data type so a bare cross-module reference reads as its
+ * contents (`mov ds, curTDB' -> `mov ds, [curTDB]').  `deftype' is the element
+ * size implied by the directive (externW=2 / externD=4 / externB=1; 0 for
+ * code/abs).  A per-name `:type' (bare `EXTRN foo:word') overrides deftype.
+ * Angle brackets around a `<a,b,...>' group are stripped.
+ */
+static char *masm_extern_emit(const char *rest, int deftype)
+{
+    const char *r = rest;
+    bool any = false;
+
+    while (*r && *r != ';') {
+        char nm[128];
+        size_t nn = 0;
+        int sz = deftype;
+        while (*r == ' ' || *r == '\t' || *r == ',' || *r == '<' || *r == '>')
+            r++;
+        if (!*r || *r == ';')
+            break;
+        while (*r && *r != ',' && *r != ':' && *r != ';' &&
+               *r != ' ' && *r != '\t' && *r != '<' && *r != '>') {
+            if (nn + 1 < sizeof nm)
+                nm[nn++] = *r;
+            r++;
+        }
+        nm[nn] = '\0';
+        while (*r == ' ' || *r == '\t')
+            r++;
+        if (*r == ':') {                /* optional per-name :type */
+            const char *ts;
+            size_t tn;
+            r++;
+            while (*r == ' ' || *r == '\t')
+                r++;
+            ts = r;
+            while (*r && *r != ',' && *r != ';' &&
+                   *r != ' ' && *r != '\t' && *r != '>')
+                r++;
+            tn = (size_t)(r - ts);
+            sz = masm_type_from_word(ts, tn);
+        }
+        if (nn) {
+            char g[160];
+            masm_type_note(nm, sz);
+            snprintf(g, sizeof g, "extern %s", nm);
+            masm_ppq_add(nasm_strdup(g));
+            any = true;
+        }
+    }
+    if (!any)
+        masm_ppq_add(nasm_strdup(""));
+    return masm_ppq_get();
+}
+
 static int masm_anon_seq;
 
 static char *masm_rewrite_anon(const char *line)
@@ -2588,28 +2656,30 @@ static char *masm_pp_xform(char *line)
      * `:type' is documentation NASM does not need, so strip it.  (Only the
      * MASM `extrn' spelling -- native `extern sym:type' is left to NASM.) */
     if (!nasm_stricmp(w1, "extrn")) {
-        char names[512];
-        size_t ni = 0;
-        const char *r = p;
-        bool skip = false;
-        while (*r == ' ' || *r == '\t')
-            r++;
-        for (; *r && *r != ';' && ni + 1 < sizeof names; r++) {
-            if (*r == ':') { skip = true; continue; }
-            if (*r == ',') { skip = false; names[ni++] = ','; continue; }
-            if (skip) continue;
-            names[ni++] = *r;
+        char *res = masm_extern_emit(p, 0);  /* size from each name's :type */
+        nasm_free(line);                     /* after: p pointed into line */
+        return res;
+    }
+
+    /*
+     * cmacros typed external declarations: externW/D/B name a WORD/DWORD/BYTE
+     * data symbol (register the type so a bare reference reads as memory);
+     * externFP/NP/P/A name code/abs symbols (no data type).  Handled here so
+     * the type survives -- the shim macro cannot register it (no C access).
+     */
+    {
+        int esz = -1;
+        if      (!nasm_stricmp(w1, "externW")) esz = 2;
+        else if (!nasm_stricmp(w1, "externD")) esz = 4;
+        else if (!nasm_stricmp(w1, "externB")) esz = 1;
+        else if (!nasm_stricmp(w1, "externA") || !nasm_stricmp(w1, "externFP") ||
+                 !nasm_stricmp(w1, "externNP") || !nasm_stricmp(w1, "externP"))
+            esz = 0;
+        if (esz >= 0) {
+            char *res = masm_extern_emit(p, esz);
+            nasm_free(line);            /* after: p pointed into line */
+            return res;
         }
-        names[ni] = '\0';
-        while (ni && (names[ni-1]==' '||names[ni-1]=='\t'||names[ni-1]==','))
-            names[--ni] = '\0';
-        if (ni)
-            snprintf(tmp, sizeof tmp, "extern %s", names);
-        else
-            tmp[0] = '\0';
-        nasm_free(line);
-        masm_ppq_add(nasm_strdup(tmp));
-        return masm_ppq_get();
     }
 
     /* Segment-register assumptions carry no encoding in flat/obj output. */

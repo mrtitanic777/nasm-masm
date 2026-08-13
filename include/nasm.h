@@ -505,6 +505,15 @@ extern bool tasm_compatible_mode;
 extern bool masm_mode;          /* --masm: MASM 6.x source compatibility */
 
 /*
+ * Register the MASM data-type (element size in bytes) of a label, so a bare
+ * reference to it is treated as its contents ([label]).  Normally populated by
+ * the parser from local data definitions; the --masm preprocessor also calls
+ * this for typed EXTRN / externW/D/B declarations, whose type would otherwise
+ * be lost across modules.  size 0 is ignored (non-data: ABS/NEAR/FAR/proc).
+ */
+void masm_type_note(const char *name, int size);
+
+/*
  * inline function to skip past an identifier; returns the first character past
  * the identifier if valid, otherwise NULL.
  */
