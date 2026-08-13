@@ -3290,7 +3290,18 @@ static char *masm_pp_xform(char *line)
             xr = ex;
             while (*xr == ' ' || *xr == '\t')
                 xr++;
-            if (masm_ident_only(xr) &&
+            if (*xr == '[') {
+                /*
+                 * NAME EQU [mem].field...  -- an alias for a MEMORY operand
+                 * (cmacros frame accessors: `wParam equ [pFrame].wp_wParam').
+                 * NASM's `equ' rejects a memory operand, so bind it textually
+                 * (%define) after rewriting `].field' member access to
+                 * `+ field]'.
+                 */
+                char *mr = masm_rewrite_line(nasm_strdup(xr));
+                snprintf(tmp, sizeof tmp, "%%define %s %s", w1, mr);
+                nasm_free(mr);
+            } else if (masm_ident_only(xr) &&
                 (!nasm_stricmp(xr, "short") || !nasm_stricmp(xr, "near") ||
                  !nasm_stricmp(xr, "far")))
                 snprintf(tmp, sizeof tmp, "%%define %s %s", w1, xr);
