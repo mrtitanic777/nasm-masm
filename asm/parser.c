@@ -36,19 +36,38 @@ static struct tokenval tokval;
  */
 static struct hash_table masm_types;    /* label name -> (intptr_t)element size */
 
+/*
+ * Fold a symbol to the canonical lower case used as the masm_types key, so the
+ * data-label type survives the case variation MASM allows (`CurTDB' vs
+ * `curTDB').  Matches the label-table folding in labels.c:find_label().
+ * Returns a pointer into `buf' (caller-provided, >= strlen(name)+1).
+ */
+static const char *masm_fold(const char *name, char *buf, size_t bufsz)
+{
+    size_t i;
+    for (i = 0; name[i] && i + 1 < bufsz; i++)
+        buf[i] = nasm_tolower(name[i]);
+    buf[i] = '\0';
+    return buf;
+}
+
 static void masm_type_set(const char *name, int size)
 {
     struct hash_insert hi;
-    void **loc = hash_find(&masm_types, name, &hi);
+    char fold[256];
+    const char *key = masm_fold(name, fold, sizeof fold);
+    void **loc = hash_find(&masm_types, key, &hi);
     if (loc)
         *loc = (void *)(intptr_t)size;
     else
-        hash_add(&hi, nasm_strdup(name), (void *)(intptr_t)size);
+        hash_add(&hi, nasm_strdup(key), (void *)(intptr_t)size);
 }
 
 static int masm_type_get(const char *name)
 {
-    void **loc = hash_find(&masm_types, name, NULL);
+    char fold[256];
+    const char *key = masm_fold(name, fold, sizeof fold);
+    void **loc = hash_find(&masm_types, key, NULL);
     return loc ? (int)(intptr_t)*loc : 0;
 }
 

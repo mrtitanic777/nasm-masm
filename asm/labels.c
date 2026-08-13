@@ -204,6 +204,24 @@ static union label *find_label(const char *label, bool create, bool *created)
     if (islocal(label))
         label = label_str = nasm_strcat(prevlabel, label);
 
+    if (masm_mode) {
+        /*
+         * MASM is case-insensitive: fold the label to a canonical lower case
+         * so `CurTDB' and `curTDB' are the same symbol.  The folded form is
+         * also what gets stored and emitted, so a definition and its
+         * references stay consistent for the linker.  (NASM's own special
+         * labels -- ..@, ..start, section symbols -- are already lower case,
+         * so folding is a no-op for them.)
+         */
+        char *lc = nasm_strdup(label);
+        char *q;
+        for (q = lc; *q; q++)
+            *q = nasm_tolower(*q);
+        if (label_str)
+            nasm_free(label_str);
+        label = label_str = lc;
+    }
+
     lpp = (union label **) hash_find(&ltab, label, &ip);
     lptr = lpp ? *lpp : NULL;
 
