@@ -2924,9 +2924,25 @@ static char *masm_pp_xform(char *line)
             return masm_ppq_get();
         }
         if (!nasm_stricmp(w1, ".erre") || !nasm_stricmp(w1, ".errnz")) {
-            /* .ERRE expr: error if expr == 0;  .ERRNZ expr: error if expr != 0 */
+            /* .ERRE expr: error if expr == 0;  .ERRNZ expr: error if expr != 0.
+             * The expression gets the same operator rewriting an IFE does
+             * (word ops + SIZE/SIZEOF/`.member') so `.ERRNZ 32-size Foo' works;
+             * a trailing `;' comment is stripped before the `(...) cmp 0' wrap. */
             const char *cmp = !nasm_stricmp(w1, ".erre") ? "==" : "!=";
-            snprintf(tmp, sizeof tmp, "%%if (%s) %s 0", rest, cmp);
+            char ex[512], *rr, *c;
+            char qc = 0;
+            size_t el;
+            masm_xlat_ops(ex, sizeof ex, rest);
+            for (c = ex; *c; c++) {
+                if (qc) { if (*c == qc) qc = 0; }
+                else if (*c == '\'' || *c == '"') qc = *c;
+                else if (*c == ';') { *c = '\0'; break; }
+            }
+            el = strlen(ex);
+            while (el && (ex[el-1]==' '||ex[el-1]=='\t')) ex[--el] = '\0';
+            rr = masm_rewrite_line(nasm_strdup(ex));
+            snprintf(tmp, sizeof tmp, "%%if (%s) %s 0", rr, cmp);
+            nasm_free(rr);
             masm_ppq_add(nasm_strdup(tmp));
             masm_ppq_add(nasm_strdup("%error assertion failed"));
             masm_ppq_add(nasm_strdup("%endif"));
