@@ -242,13 +242,20 @@
     %xdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 2
 %endmacro
+;; A DWORD parm/local also gets the cmacros far-pointer half accessors
+;; (cmacros.inc: `off_&n equ n' / `seg_&n equ n[2]'): off_<n> is the low word,
+;; seg_<n> the high word 2 bytes up.
 %imacro parmD 1
     %xdefine %1 [bp + __cp_parmo]
+    %xdefine off_%1 word [bp + __cp_parmo]
+    %xdefine seg_%1 word [bp + __cp_parmo + 2]
     %assign __cp_parmo __cp_parmo + 4
 %endmacro
 ;; DP/CP = data/code far pointer (4), Q = qword (8), T = 6-byte far pointer.
 %imacro parmDP 1
     %xdefine %1 [bp + __cp_parmo]
+    %xdefine off_%1 word [bp + __cp_parmo]
+    %xdefine seg_%1 word [bp + __cp_parmo + 2]
     %assign __cp_parmo __cp_parmo + 4
 %endmacro
 %imacro parmCP 1
@@ -275,6 +282,8 @@
 %imacro localD 1
     %assign __cp_localo __cp_localo + 4
     %xdefine %1 bp - __cp_localo
+    %xdefine off_%1 word [bp - __cp_localo]
+    %xdefine seg_%1 word [bp - __cp_localo + 2]
 %endmacro
 ;; A buffer/pointer local (localV/DP/CP/Q/T) is taken by ADDRESS (`lea bx,buf')
 ;; or loaded whole (`les di,ptr'), i.e. used WITHOUT brackets -- so bind it to
@@ -288,6 +297,8 @@
 %imacro localDP 1
     %assign __cp_localo __cp_localo + 4
     %xdefine %1 [bp - __cp_localo]
+    %xdefine off_%1 word [bp - __cp_localo]
+    %xdefine seg_%1 word [bp - __cp_localo + 2]
 %endmacro
 %imacro localCP 1
     %assign __cp_localo __cp_localo + 4
