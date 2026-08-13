@@ -513,6 +513,9 @@ extern bool masm_mode;          /* --masm: MASM 6.x source compatibility */
  */
 void masm_type_note(const char *name, int size);
 
+/* The registered MASM data-type size of `name' (0 if none). */
+int masm_type_query(const char *name);
+
 /*
  * inline function to skip past an identifier; returns the first character past
  * the identifier if valid, otherwise NULL.

@@ -81,6 +81,14 @@ void masm_type_note(const char *name, int size)
         masm_type_set(name, size);
 }
 
+/* Public entry (see nasm.h): the registered MASM data-type size of `name', or
+ * 0 if none.  Lets the --masm preprocessor tell an already-defined member label
+ * (a struct instance's `p.x') from a far-pointer reinterpret (`ptr.sel'). */
+int masm_type_query(const char *name)
+{
+    return masm_type_get(name);
+}
+
 static opflags_t masm_size_bits(int size)
 {
     switch (size) {

@@ -1701,6 +1701,23 @@ static struct masm_sdef *masm_sdef_find(const char *name)
     return NULL;
 }
 
+/* True if `name' is a member field of any completed STRUCT/UNION (not RECORD:
+ * record fields are bit shifts, not byte offsets, so `var.field' addressing
+ * does not apply to them). */
+static bool masm_is_field(const char *name)
+{
+    struct masm_sdef *s;
+    struct masm_smember *m;
+    for (s = masm_sdefs; s; s = s->next) {
+        if (s->is_record)
+            continue;
+        for (m = s->head; m; m = m->next)
+            if (m->name && !nasm_stricmp(m->name, name))
+                return true;
+    }
+    return false;
+}
+
 /* MASM member type -> NASM data directive (for emitting instance data). */
 static const char *masm_type_to_dd(const char *t)
 {
@@ -1764,6 +1781,7 @@ static char *masm_rewrite_line(char *line)
     char *out, *o;
     size_t cap;
     bool changed = false;
+    int depth = 0;                      /* `[' nesting, for var.field rewrites */
 
     cap = strlen(line) * 4 + 128;       /* operator wraps can expand the line */
     out = nasm_malloc(cap);
@@ -1795,6 +1813,8 @@ static char *masm_rewrite_line(char *line)
                 *o++ = *q++;
             *o++ = ']';
             p = q;
+            if (depth > 0)              /* this `]' closes a bracket */
+                depth--;
             changed = true;
             continue;
         }
@@ -1914,12 +1934,64 @@ static char *masm_rewrite_line(char *line)
                 }
             }
 
+            /*
+             * var.field member access: `myInt2F.sel' -> `[myInt2F + sel]'.
+             * `.' is an identifier char, so the whole `base.field' is one token
+             * (length wl): split at the first `.'.  Rewrite only when OUTSIDE
+             * brackets, the first field component is a struct member, and the
+             * base is not itself a struct TYPE (so a type-qualified offset
+             * `SEGOFF.sel' is left alone) nor a local label (leading `.').  The
+             * field stays bare so its own %idefine (-> STRUCT.field offset)
+             * resolves it; any sub-member chain after it is carried along.
+             */
+            if (depth == 0 && p[0] != '.') {
+                size_t dp = 0;
+                while (dp < wl && p[dp] != '.')
+                    dp++;
+                if (dp > 0 && dp + 1 < wl && dp < 120) {
+                    char base[128], f1[128];
+                    const char *fp = p + dp + 1;
+                    size_t fl = 0;
+                    while (fp + fl < p + wl && fp[fl] != '.' && fl + 1 < sizeof f1) {
+                        f1[fl] = fp[fl];
+                        fl++;
+                    }
+                    char full[128];
+                    f1[fl] = '\0';
+                    memcpy(base, p, dp);
+                    base[dp] = '\0';
+                    /*
+                     * Skip when `base.field' is itself a defined data label:
+                     * that is a struct INSTANCE member (`p POINT <>' defines
+                     * `p.x'), already handled -- and sized -- by the data-label
+                     * rule.  Only a far-pointer REINTERPRET (`ptr.sel', where
+                     * ptr.sel is not a label) needs the `[ptr + sel]' rewrite.
+                     */
+                    if (wl < sizeof full) {
+                        memcpy(full, p, wl);
+                        full[wl] = '\0';
+                    } else {
+                        full[0] = '\0';
+                    }
+                    if (masm_is_field(f1) && !masm_sdef_find(base) &&
+                        masm_type_query(full) == 0) {
+                        o += sprintf(o, "[%.*s + %.*s]", (int)dp, p,
+                                     (int)(wl - dp - 1), p + dp + 1);
+                        p += wl;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
+
             /* not an operator: copy the whole identifier verbatim */
             memcpy(o, p, wl);
             o += wl;
             p += wl;
             continue;
         }
+        if (*p == '[') depth++;
+        else if (*p == ']' && depth > 0) depth--;
         *o++ = *p++;
     }
     *o = '\0';
