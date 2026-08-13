@@ -2093,6 +2093,59 @@ static void masm_emit_opt_guards(const char *expr)
     }
 }
 
+/*
+ * MASM anonymous labels: `@@:' defines one, `@F' refers to the NEXT `@@'
+ * forward, `@B' to the nearest `@@' backward.  Rewrite each to a counter-
+ * generated global label -- single-pass friendly because `@F' is simply the
+ * label the next `@@:' will mint (the current counter) and `@B' the last one
+ * minted (counter - 1).  Returns a fresh line if anything changed, else NULL.
+ * String literals and trailing `;' comments are left untouched.  Regular-code
+ * only: inside a macro body one label would be baked into every expansion.
+ */
+static int masm_anon_seq;
+
+static char *masm_rewrite_anon(const char *line)
+{
+    const char *p = line;
+    char *out, *o;
+    bool changed = false;
+    char qc = 0;
+
+    out = nasm_malloc(strlen(line) * 2 + 64);
+    o = out;
+    while (*p) {
+        if (qc) { if (*p == qc) qc = 0; *o++ = *p++; continue; }
+        if (*p == '\'' || *p == '"') { qc = *p; *o++ = *p++; continue; }
+        if (*p == ';') { strcpy(o, p); o += strlen(p); p += strlen(p); break; }
+        if (*p == '@' && p[1] == '@' && p[2] == ':' &&
+            (p == line || (!nasm_isidchar(p[-1]) && p[-1] != '@'))) {
+            o += sprintf(o, "__masm_anon_%d:", masm_anon_seq);
+            masm_anon_seq++;
+            p += 3;
+            changed = true;
+            continue;
+        }
+        if (*p == '@' && (p[1] == 'F' || p[1] == 'f' || p[1] == 'B' ||
+                          p[1] == 'b') &&
+            !nasm_isidchar(p[2]) && p[2] != '@' &&
+            (p == line || (!nasm_isidchar(p[-1]) && p[-1] != '@'))) {
+            int n = (p[1] == 'B' || p[1] == 'b') ? masm_anon_seq - 1
+                                                 : masm_anon_seq;
+            o += sprintf(o, "__masm_anon_%d", n);
+            p += 2;
+            changed = true;
+            continue;
+        }
+        *o++ = *p++;
+    }
+    *o = '\0';
+    if (!changed) {
+        nasm_free(out);
+        return NULL;
+    }
+    return out;
+}
+
 static char *masm_pp_xform(char *line)
 {
     const char *p = line;
@@ -2152,6 +2205,13 @@ static char *masm_pp_xform(char *line)
             masm_comment_delim = 0;
         nasm_free(line);
         return nasm_strdup("");
+    }
+
+    /* MASM anonymous labels @@:/@F/@B -> counter-generated labels (regular
+     * code only; a macro body would emit one label per expansion). */
+    if (!(masm_ppstk && masm_ppstk->is_macro)) {
+        char *ar = masm_rewrite_anon(line);
+        if (ar) { nasm_free(line); line = ar; p = line; }
     }
 
     /* A `%'-line is MASM's immediate text-expansion; the only such directive we
@@ -10410,6 +10470,7 @@ void pp_reset(const char *file, enum preproc_mode mode,
     nested_mac_count = 0;
     nested_rep_count = 0;
     unique = 0;
+    masm_anon_seq = 0;          /* MASM @@/@F/@B labels: same names every pass */
     deplist = dep_list;
     pp_mode = mode;
 
