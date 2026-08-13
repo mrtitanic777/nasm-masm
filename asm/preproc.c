@@ -2310,6 +2310,24 @@ static char *masm_pp_xform(char *line)
             nasm_free(line);
             return nasm_strdup("");
         }
+        /*
+         * A leading `% ' (percent then whitespace) is MASM's line-level
+         * immediate-expansion marker (`% sBegin &type&%KRNLDS' in kernel.inc's
+         * DataBegin): it forces the rest of the line's text macros to expand,
+         * which NASM does anyway.  Drop the marker and process the remainder.
+         * (`%if'/`%macro'/... have no space after `%'; `%[' is NASM syntax --
+         * none match, so they are left alone.)
+         */
+        if (q[0] == '%' && (q[1] == ' ' || q[1] == '\t')) {
+            char *nl;
+            q++;
+            while (*q == ' ' || *q == '\t')
+                q++;
+            nl = nasm_strdup(q);
+            nasm_free(line);
+            line = nl;
+            p = line;
+        }
     }
 
     /*
