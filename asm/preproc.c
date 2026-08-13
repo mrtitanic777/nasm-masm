@@ -2050,6 +2050,49 @@ static void masm_xlat_ops(char *dst, size_t dsz, const char *src)
     *o = '\0';
 }
 
+/*
+ * MASM treats an undefined symbol in an IF/IFE expression as 0.  We replicate
+ * that safely for the `?'-prefixed conditional-assembly OPTION switches
+ * (?CHKSTK1, ?RIPAUX, ?DF, ...) that pervade cmacros-era code: before the
+ * translated %if, emit a `%ifndef ?X / %assign ?X 0 / %endif' guard for each
+ * such symbol referenced in the expression, so an option that no module set
+ * defaults to 0/false rather than failing "not defined before use".  Limiting
+ * this to the `?' convention avoids masking a genuine typo in an ordinary
+ * symbol.  Guards are idempotent, so re-emitting on later uses is harmless.
+ */
+static void masm_emit_opt_guards(const char *expr)
+{
+    const char *p = expr;
+    char seen[16][64];
+    int nseen = 0, i;
+
+    while (*p) {
+        if (*p == '?' && nasm_isidstart(p[1]) &&
+            (p == expr || (!nasm_isidchar(p[-1]) && p[-1] != '.'))) {
+            char nm[64];
+            size_t n = 0;
+            nm[n++] = *p++;             /* leading '?' */
+            while (n + 1 < sizeof nm && nasm_isidchar(*p))
+                nm[n++] = *p++;
+            nm[n] = '\0';
+            for (i = 0; i < nseen; i++)
+                if (!strcmp(seen[i], nm))
+                    break;
+            if (i == nseen && nseen < 16) {
+                char g[160];
+                strcpy(seen[nseen++], nm);
+                snprintf(g, sizeof g, "%%ifndef %s", nm);
+                masm_ppq_add(nasm_strdup(g));
+                snprintf(g, sizeof g, "%%assign %s 0", nm);
+                masm_ppq_add(nasm_strdup(g));
+                masm_ppq_add(nasm_strdup("%endif"));
+            }
+        } else {
+            p++;
+        }
+    }
+}
+
 static char *masm_pp_xform(char *line)
 {
     const char *p = line;
@@ -2596,6 +2639,10 @@ static char *masm_pp_xform(char *line)
             if (!nasm_stricmp(dir, "%if") || !nasm_stricmp(dir, "%elif")) {
                 char ex[512];
                 masm_xlat_ops(ex, sizeof ex, rest);  /* IF/ELSEIF: word ops */
+                /* %elif cannot be preceded by guard blocks (it would break the
+                 * %if chain); only default option switches on a fresh %if. */
+                if (!nasm_stricmp(dir, "%if"))
+                    masm_emit_opt_guards(ex);
                 snprintf(tmp, sizeof tmp, "%s %s", dir, ex);
             } else {
                 snprintf(tmp, sizeof tmp, "%s %s", dir, rest);
@@ -2605,8 +2652,20 @@ static char *masm_pp_xform(char *line)
             return masm_ppq_get();
         }
         if (!nasm_stricmp(w1, "ife")) {         /* IFE: assemble if expr == 0 */
-            char ex[512];
+            char ex[512], *c;
+            char qc = 0;
+            size_t el;
             masm_xlat_ops(ex, sizeof ex, rest);
+            /* Strip a trailing `;' comment: wrapping in `(...) == 0' would
+             * otherwise let the comment swallow the closing `) == 0'. */
+            for (c = ex; *c; c++) {
+                if (qc) { if (*c == qc) qc = 0; }
+                else if (*c == '\'' || *c == '"') qc = *c;
+                else if (*c == ';') { *c = '\0'; break; }
+            }
+            el = strlen(ex);
+            while (el && (ex[el-1]==' '||ex[el-1]=='\t')) ex[--el] = '\0';
+            masm_emit_opt_guards(ex);
             snprintf(tmp, sizeof tmp, "%%if (%s) == 0", ex);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
