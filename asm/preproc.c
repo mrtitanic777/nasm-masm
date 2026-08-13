@@ -1770,6 +1770,14 @@ static char *masm_rewrite_line(char *line)
     o = out;
 
     while (*p) {
+        /* MASM adjacent-bracket addressing `[a][b]' -> `[a + b]' (the brackets
+         * concatenate as addition): drop the `][' and insert ` + '. */
+        if (*p == ']' && p[1] == '[') {
+            o += sprintf(o, " + ");
+            p += 2;
+            changed = true;
+            continue;
+        }
         /* `].member.chain'  ->  ` + member.chain]' */
         if (*p == ']' && p[1] == '.') {
             const char *q = p + 2;
