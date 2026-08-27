@@ -61,8 +61,10 @@ def is_standalone(path):
     return bool(re.search(r"(?im)^\s*include\s+(kernel\.inc|cmacros\.inc)\b", head))
 
 
-def assemble(nasm, asm, incdirs, defines, outfmt, out):
+def assemble(nasm, asm, incdirs, defines, outfmt, out, opt=None):
     cmd = [nasm, "--masm", "-f", outfmt]
+    if opt is not None:
+        cmd += ["-O" + opt]
     for d in defines:
         cmd += ["-D", d]
     for d in incdirs:
@@ -88,6 +90,8 @@ def main():
                     help="print one module's errors and exit")
     ap.add_argument("--top", type=int, default=0,
                     help="also print the N worst modules")
+    ap.add_argument("--opt", default=None,
+                    help="nasm -O optimization level (e.g. x, 1, 0)")
     args = ap.parse_args()
 
     nasm = find_nasm(args.nasm)
@@ -114,7 +118,7 @@ def main():
         if not target:
             print(f"module {args.errors} not found", file=sys.stderr)
             return 2
-        for e in assemble(nasm, target, incdirs, defines, args.outfmt, tmp):
+        for e in assemble(nasm, target, incdirs, defines, args.outfmt, tmp, args.opt):
             print(e)
         if os.path.exists(tmp):
             os.remove(tmp)
@@ -125,7 +129,7 @@ def main():
     results = []          # (name, nerrs, standalone)
     for asm in asms:
         name = os.path.splitext(os.path.basename(asm))[0]
-        errs = assemble(nasm, asm, incdirs, defines, args.outfmt, tmp)
+        errs = assemble(nasm, asm, incdirs, defines, args.outfmt, tmp, args.opt)
         results.append((name, len(errs), is_standalone(asm)))
     if os.path.exists(tmp):
         os.remove(tmp)

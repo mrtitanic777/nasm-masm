@@ -2113,6 +2113,20 @@ static bool masm_is_segreg2(const char *s)
     return false;
 }
 
+/* A cmacros far-pointer half-accessor suffix: `.off'/`.lo' select the low word
+ * (returns 0), `.sel'/`.seg'/`.hi' the high word (returns 2); -1 if `s' (length
+ * n) is not one of them.  Used to resolve a `struct.member.half' access on a
+ * DWORD (far-pointer) struct member to `[struct + member (+2)]'. */
+static int masm_farhalf(const char *s, size_t n)
+{
+    if (n == 2 && !nasm_strnicmp(s, "lo", 2))  return 0;
+    if (n == 3 && !nasm_strnicmp(s, "off", 3)) return 0;
+    if (n == 2 && !nasm_strnicmp(s, "hi", 2))  return 2;
+    if (n == 3 && !nasm_strnicmp(s, "sel", 3)) return 2;
+    if (n == 3 && !nasm_strnicmp(s, "seg", 3)) return 2;
+    return -1;
+}
+
 /* A general-purpose base/index register (16- or 32-bit), for `[reg.field]'
  * struct-member access.  Exact match, case-insensitive. */
 static bool masm_is_gpreg(const char *s)
@@ -2255,9 +2269,35 @@ static char *masm_rewrite_line(char *line)
         /* `].member.chain'  ->  ` + member.chain]' */
         if (*p == ']' && p[1] == '.') {
             const char *q = p + 2;
-            o += sprintf(o, " + ");
+            const char *ms = q;
+            size_t mlen, d2, fc;
+            int half = -1;
             while (nasm_isidchar(*q) || *q == '.')
-                *o++ = *q++;
+                q++;
+            /* strip a trailing far-pointer half suffix (`.member.sel'): the
+             * `.lo'/`.off' word is +0, `.hi'/`.sel'/`.seg' is +2.  Only when the
+             * chain's FIRST component is a struct member/field, never a struct
+             * TYPE -- `[esi].UNION.lo' addresses the real member `lo', whereas
+             * `[si].farptrField.sel' takes the high word of a far pointer. */
+            mlen = q - ms;
+            fc = 0;
+            while (fc < mlen && ms[fc] != '.')
+                fc++;
+            d2 = mlen;
+            while (d2 > 0 && ms[d2-1] != '.')
+                d2--;
+            if (d2 > 0 && *q != '[') {
+                char fcbuf[128];
+                if (fc < sizeof fcbuf) {
+                    memcpy(fcbuf, ms, fc);
+                    fcbuf[fc] = '\0';
+                    if (!masm_sdef_find(fcbuf))  /* first comp is not a type */
+                        half = masm_farhalf(ms + d2, mlen - d2);
+                }
+            }
+            if (half >= 0)
+                mlen = d2 - 1;
+            o += sprintf(o, " + %.*s%s", (int)mlen, ms, half == 2 ? " + 2" : "");
             if (*q == '[') {
                 /* `].member[idx]'  ->  ` + member + idx]': fold the index into
                  * the same bracket group rather than closing here.  Depth is
@@ -2486,12 +2526,27 @@ static char *masm_rewrite_line(char *line)
                          * off_/.sel half accessor (whose suffix names ARE struct
                          * fields, so they must not be rewritten here).
                          */
-                        if (depth == 0)         /* outside `[]': wrap in a memref */
-                            o += sprintf(o, "[%.*s + %.*s]", (int)dp, p,
-                                         (int)(wl - dp - 1), p + dp + 1);
-                        else                    /* already inside `[]': `base + field' */
-                            o += sprintf(o, "%.*s + %.*s", (int)dp, p,
-                                         (int)(wl - dp - 1), p + dp + 1);
+                        {
+                            /* field chain after `base.' -- may end in a far
+                             * -pointer half suffix (`member.lo'/`member.sel'):
+                             * strip it and add its word offset to the address. */
+                            const char *fld = p + dp + 1;
+                            size_t fln = wl - dp - 1;
+                            size_t d2 = fln;
+                            int half = -1;
+                            while (d2 > 0 && fld[d2-1] != '.')
+                                d2--;
+                            if (d2 > 0)
+                                half = masm_farhalf(fld + d2, fln - d2);
+                            if (half >= 0)
+                                fln = d2 - 1;   /* drop `.half' */
+                            if (depth == 0)
+                                o += sprintf(o, "[%.*s + %.*s%s]", (int)dp, p,
+                                             (int)fln, fld, half == 2 ? " + 2" : "");
+                            else
+                                o += sprintf(o, "%.*s + %.*s%s", (int)dp, p,
+                                             (int)fln, fld, half == 2 ? " + 2" : "");
+                        }
                         p += wl;
                         changed = true;
                         continue;
