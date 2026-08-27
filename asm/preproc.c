@@ -2731,6 +2731,40 @@ static char *masm_pp_xform(char *line)
         return line;
     }
 
+    if (!nasm_stricmp(w1, "local") && masm_ppstk && masm_ppstk->is_macro) {
+        /*
+         * MASM `LOCAL a, b' inside a MACRO body declares macro-local LABELS
+         * (a fresh unique symbol per expansion) -- unlike the MASM-6 PROC
+         * `LOCAL v:type' stack local (masm.mac's `local' macro, used only in
+         * .MODEL/PROC code).  Inside a MASM macro definition, bind each name
+         * to NASM's per-expansion `%%name' so body references and the `name:'
+         * definition resolve to the same fresh label on every invocation.
+         */
+        const char *q = p;
+        char nm[128];
+        bool any = false;
+        while (*q) {
+            size_t n = 0;
+            while (*q == ' ' || *q == '\t' || *q == ',')
+                q++;
+            if (!nasm_isidstart(*q))
+                break;
+            while (nasm_isidchar(*q) && n + 1 < sizeof nm)
+                nm[n++] = *q++;
+            nm[n] = '\0';
+            if (*q == ':')              /* drop a `:type'/`:REQ' qualifier */
+                while (*q && *q != ',')
+                    q++;
+            snprintf(tmp, sizeof tmp, "%%define %s %%%%%s", nm, nm);
+            masm_ppq_add(nasm_strdup(tmp));
+            any = true;
+        }
+        nasm_free(line);
+        if (!any)
+            return nasm_strdup("");
+        return masm_ppq_get();
+    }
+
     if (!nasm_stricmp(w1, "endm")) {
         struct masm_ppblk *b = masm_ppstk;
         if (!b)
