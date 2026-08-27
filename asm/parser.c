@@ -1325,6 +1325,25 @@ restart_parse:
 
         recover = false;
         if (mref) {
+            /*
+             * MASM (--masm): a param/local bound to a memory operand `[bp-o]'
+             * may itself be bracketed in the source (`mov bx,[wLen]'), which
+             * expands to `[[bp-o]]'.  Collapse the redundant inner bracket(s)
+             * so the whole thing parses as one mref; a fold operator after an
+             * inner close (`[nBytes+2]' -> `[[bp-o]+2]') re-enters the mref
+             * accumulator, exactly as the trailing-`[idx]' fold does below.
+             */
+            if (masm_mode) {
+                while (bracket > 1 && i == ']') {
+                    bracket--;
+                    i = stdscan(NULL, &tokval);
+                    if (i == '[' || i == '+' || i == '-') {
+                        if (parse_mref(op, value))
+                            goto fail;
+                        goto mref_more;
+                    }
+                }
+            }
             if (bracket == 1) {
                 if (i == ']') {
                     bracket--;
