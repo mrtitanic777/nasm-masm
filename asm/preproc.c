@@ -2929,6 +2929,35 @@ static char *masm_pp_xform(char *line)
     }
 
     /*
+     * MASM `ORG N' sets the SEGMENT-relative location counter to N (used to lay
+     * data at fixed offsets).  NASM's own `org' sets the absolute load base and
+     * is `-f bin' only, so it fails for the object backends.  Emit the padding
+     * that reaches offset N instead -- `times (N - ($-$$)) db 0' -- which works
+     * in every backend.  `ORG 0' at a segment start is a no-op.
+     */
+    if (!nasm_stricmp(w1, "org")) {
+        char ex[256], arg[256];
+        const char *v = p;
+        size_t an = 0;
+        while (*v == ' ' || *v == '\t')
+            v++;
+        while (*v && *v != ';' && an + 1 < sizeof arg)  /* stop at a comment */
+            arg[an++] = *v++;
+        arg[an] = '\0';
+        masm_xlat_ops(ex, sizeof ex, arg);
+        {   /* trim */
+            size_t n = strlen(ex);
+            while (n && (ex[n-1]==' '||ex[n-1]=='\t'||ex[n-1]=='\r'))
+                ex[--n] = '\0';
+        }
+        nasm_free(line);
+        if (!nasm_stricmp(ex, "0") || !*ex)
+            return nasm_strdup("");
+        snprintf(tmp, sizeof tmp, "times ((%s) - ($ - $$)) db 0", ex);
+        return nasm_strdup(tmp);
+    }
+
+    /*
      * A label or branch target named like an FPU stack register (`st1:',
      * `jnz st1').  NASM reserves ST0..ST7 (the disassembly corpus uses them as
      * real FPU registers, so they cannot be un-reserved like the 64-bit GPR
