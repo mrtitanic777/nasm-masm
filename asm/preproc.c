@@ -4951,6 +4951,35 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    /*
+     * MASM `SIZE var' on a data variable is its total byte count.  For a labeled
+     * buffer/array (`name <db/dw/dd/...> N DUP(...)') emit `name_size equ $ -
+     * name' after the data, so a later `SIZE name' (rewritten to `name_size')
+     * resolves to the byte count -- exactly as a STRUCT's name_size does.  Gated
+     * on DUP so a _size symbol is defined only for arrays, not every scalar.
+     */
+    if (l2 && nasm_isidstart((unsigned char)w1[0]) &&
+        (!nasm_stricmp(w2, "db") || !nasm_stricmp(w2, "dw") ||
+         !nasm_stricmp(w2, "dd") || !nasm_stricmp(w2, "dq") ||
+         !nasm_stricmp(w2, "dt") || !nasm_stricmp(w2, "df"))) {
+        const char *s;
+        bool has_dup = false;
+        for (s = line; *s && *s != ';'; s++) {
+            if ((s == line || !nasm_isidchar((unsigned char)s[-1])) &&
+                !nasm_strnicmp(s, "dup", 3) &&
+                !nasm_isidchar((unsigned char)s[3])) {
+                has_dup = true;
+                break;
+            }
+        }
+        if (has_dup) {
+            char *rl = masm_rewrite_line(line);
+            snprintf(tmp, sizeof tmp, "%s_size equ $ - %s", w1, w1);
+            masm_ppq_add(nasm_strdup(tmp));
+            return rl;
+        }
+    }
+
     /* Plain line: apply struct-member / SIZEOF operand rewrites. */
     return masm_rewrite_line(line);
 }
