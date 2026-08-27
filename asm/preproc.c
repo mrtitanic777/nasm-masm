@@ -4970,6 +4970,32 @@ static char *read_line(void)
     if (!line)
         return NULL;
 
+    /*
+     * MASM `END [entrypoint]' terminates the module: everything after it in the
+     * file is not assembled.  Reconstructed sources sometimes leave commentary
+     * or pseudo-code after END that real MASM silently drops.  Honor it by
+     * draining the rest of the current file so read_line reports EOF -- but only
+     * for the bare END directive (not ENDM/ENDP/ENDS/ENDIF, a label `end:', or
+     * an `end EQU/=' symbol), and only while actively emitting.
+     */
+    if (masm_mode && f && !(istk->conds && !emitting(istk->conds->state))) {
+        const char *q = line;
+        while (*q == ' ' || *q == '\t')
+            q++;
+        if (!nasm_strnicmp(q, "end", 3) && !nasm_isidchar((unsigned char)q[3])) {
+            const char *r = q + 3;
+            while (*r == ' ' || *r == '\t')
+                r++;
+            if (*r != ':' && *r != '=') {   /* not a label or EQU named `end' */
+                char *junk;
+                while ((junk = line_from_file(f)) != NULL)
+                    nasm_free(junk);
+                nasm_free(line);
+                return NULL;
+            }
+        }
+    }
+
     if (masm_mode)
         line = masm_pp_xform(line);     /* MASM MACRO/ENDM/REPT -> NASM */
 
