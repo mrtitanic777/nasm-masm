@@ -4124,12 +4124,16 @@ static char *masm_pp_xform(char *line)
         }
 
         /* MASM macro parameters are all optional (an omitted one is blank, as
-         * IFB tests), so declare a 0..nparam range rather than an exact count.
+         * IFB tests) AND a MASM caller may pass extra arguments -- notably a
+         * `<...>' list argument, which NASM splits on its inner commas into
+         * several arguments (`WOWTrace msg,<<ax,f>,<bx,n>>').  So declare the
+         * macro VARIADIC (`0-*', unbounded, like the shim's cCall) rather than
+         * an exact upper bound: the named params still bind to %1..%N and any
+         * overflow is ignored.  `*' (unbounded args), NOT `+' (a greedy last
+         * param that re-joins with commas -- that form is pathologically slow).
          * %imacro (not %macro): MASM macro names are case-insensitive too. */
-        if (nparam > 0)
-            snprintf(tmp, sizeof tmp, "%%imacro %s 0-%d", w1, nparam);
-        else
-            snprintf(tmp, sizeof tmp, "%%imacro %s 0", w1);
+        (void)nparam;
+        snprintf(tmp, sizeof tmp, "%%imacro %s 0-*", w1);
         masm_ppq_add(nasm_strdup(tmp));
         /* Parameters are substituted textually in the body (masm_subst_params),
          * so no `%define param %N' smacros are emitted here. */
