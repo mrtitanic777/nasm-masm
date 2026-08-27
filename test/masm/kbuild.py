@@ -90,8 +90,12 @@ def main():
                     help="print one module's errors and exit")
     ap.add_argument("--top", type=int, default=0,
                     help="also print the N worst modules")
-    ap.add_argument("--opt", default=None,
-                    help="nasm -O optimization level (e.g. x, 1, 0)")
+    # The Win3.1 KERNEL was built with MASM 5.x, which shortens in-range forward
+    # jumps (and its `jmps' macro forces `jmp short').  Match that with -Ox so
+    # those jumps fit; the masm-mode default -O1 (no forward-jump shortening) is
+    # tuned for the VxD corpus's *later* toolchain, a different build.
+    ap.add_argument("--opt", default="x",
+                    help="nasm -O optimization level (default x; e.g. x, 1, 0)")
     args = ap.parse_args()
 
     nasm = find_nasm(args.nasm)
