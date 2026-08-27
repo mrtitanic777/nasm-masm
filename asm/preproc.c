@@ -2719,6 +2719,17 @@ static char *masm_pp_xform(char *line)
         }
     }
 
+    /* MASM `EVEN' aligns the location counter to a word boundary -> `align 2'. */
+    if (!nasm_stricmp(w1, "even")) {
+        const char *e = p;
+        while (*e == ' ' || *e == '\t')
+            e++;
+        if (!*e || *e == ';') {
+            nasm_free(line);
+            return nasm_strdup("align 2");
+        }
+    }
+
     /*
      * A label or branch target named like an FPU stack register (`st1:',
      * `jnz st1').  NASM reserves ST0..ST7 (the disassembly corpus uses them as
