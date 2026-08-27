@@ -2819,6 +2819,27 @@ static char *masm_pp_xform(char *line)
                 nasm_free(line);
                 return masm_rewrite_line(nasm_strdup(tmp));
             }
+        } else if (nasm_isidstart(*s)) {
+            /*
+             * `cCall NAME <args>' -- the target and its `<...>' argument list
+             * are separated by a SPACE, not a comma.  NASM splits macro args on
+             * commas, so this reaches the shim as a single mangled first arg.
+             * Insert the comma: `cCall NAME, <args>'.
+             */
+            const char *n = s;
+            while (nasm_isidchar(*n))
+                n++;
+            {
+                const char *g = n;
+                while (*g == ' ' || *g == '\t')
+                    g++;
+                if (*g == '<') {
+                    snprintf(tmp, sizeof tmp, "cCall %.*s,%s",
+                             (int)(n - s), s, g);
+                    nasm_free(line);
+                    return masm_rewrite_line(nasm_strdup(tmp));
+                }
+            }
         }
     }
 
