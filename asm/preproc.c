@@ -2901,6 +2901,38 @@ static char *masm_pp_xform(char *line)
     }
 
     /*
+     * cmacros data declarations with a SPACE-separated value (`globalW
+     * hExePatchAppCache 0' rather than `globalW name, 0').  MASM accepts space
+     * or tab as a macro-argument separator; NASM splits only on commas, so the
+     * shim macro would see `name value' as one argument and build a broken
+     * label.  Insert the comma: `globalW name, value'.
+     */
+    if ((!nasm_strnicmp(w1, "global", 6) || !nasm_strnicmp(w1, "static", 6)) &&
+        l1 == 7) {
+        char suf = nasm_tolower(w1[6]);
+        if (suf == 'b' || suf == 'w' || suf == 'd' || suf == 'q' || suf == 't') {
+            const char *s = p;
+            while (*s == ' ' || *s == '\t')
+                s++;
+            if (nasm_isidstart(*s)) {
+                const char *n = s;
+                const char *g;
+                while (nasm_isidchar(*n))
+                    n++;
+                g = n;
+                while (*g == ' ' || *g == '\t')
+                    g++;
+                if (*g && *g != ',' && *g != ';') {
+                    snprintf(tmp, sizeof tmp, "%s %.*s, %s",
+                             w1, (int)(n - s), s, g);
+                    nasm_free(line);
+                    return masm_rewrite_line(nasm_strdup(tmp));
+                }
+            }
+        }
+    }
+
+    /*
      * Scalar param/local declarations carry their size in the mnemonic suffix
      * (parmB/localB = 1, parmW/localW = 2, parmD/localD = 4); record name->size
      * so MOVZX/MOVSX can size a bare source that names one (see masm_lszs).
