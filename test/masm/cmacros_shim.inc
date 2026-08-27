@@ -214,6 +214,37 @@
 %assign __cp_parmo 0            ; running parameter offset from BP
 %assign __cp_localo 0          ; running local size (subtracted from SP)
 %define __cp_uses
+%assign __sav_have 0           ; pending `Save <regs>' count consumed by cCall
+
+;; Save <reg,...> -- record registers the NEXT cCall must preserve across the
+;; call (MASM's `save' sets a bitmask consumed by cCall's mpush/mpop).  cCall
+;; pushes them before the arguments and pops them (reverse) after the call.
+;; Each register is stored in a numbered smacro __sav_reg<i>.
+%imacro save 1-*
+    %assign __sav_have 0
+    %rep %0
+        %defstr __sav_s %1
+        %strlen __sav_l __sav_s
+        %assign __sav_a 1
+        %assign __sav_b __sav_l
+        %substr __sav_c __sav_s 1,1
+        %ifidn __sav_c, '<'
+            %assign __sav_a 2
+        %endif
+        %substr __sav_c __sav_s __sav_l,1
+        %ifidn __sav_c, '>'
+            %assign __sav_b __sav_b - 1
+        %endif
+        %if __sav_b >= __sav_a
+            %substr __sav_r __sav_s __sav_a,__sav_b-__sav_a+1
+            %assign __sav_have __sav_have + 1
+            %deftok __sav_tmp __sav_r
+            %xdefine __sav_reg%[__sav_have] __sav_tmp
+        %endif
+        %rotate 1
+    %endrep
+%endmacro
+%idefine Save save
 
 ;; cProc name [, flag ...]  -- FAR/NEAR/PUBLIC recognised; the <...> group MASM
 ;; writes is passed by the front-end as separate tokens, so scan every argument.
@@ -442,6 +473,14 @@ __cp_nt:
 ;; call.  The <...> group arrives bracket-split (`<ax', `bx>'); strip and push.
 %imacro cCall 1-*
     %xdefine __cc_fn %1
+    ;; A pending `Save <regs>' -- push them (in order) before the arguments.
+    %if __sav_have > 0
+        %assign __cc_svi 1
+        %rep __sav_have
+            push __sav_reg%[__cc_svi]
+            %assign __cc_svi __cc_svi + 1
+        %endrep
+    %endif
     %rep %0 - 1
         %rotate 1
         %defstr __cc_s %1
@@ -489,6 +528,15 @@ __cp_nt:
         %endif
     %endrep
     call __cc_fn
+    ;; Restore a pending `Save <regs>' -- pop them in reverse after the call.
+    %if __sav_have > 0
+        %assign __cc_svi __sav_have
+        %rep __sav_have
+            pop __sav_reg%[__cc_svi]
+            %assign __cc_svi __cc_svi - 1
+        %endrep
+        %assign __sav_have 0
+    %endif
 %endmacro
 ;; farPtr n,s,o -- declare `n' as a far pointer whose value is the pair (s,o).
 ;; MASM generates a push-macro named `n'; here `n' is instead recorded as a
