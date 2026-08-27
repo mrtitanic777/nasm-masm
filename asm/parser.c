@@ -1470,6 +1470,24 @@ restart_parse:
                 op->hinttype = hints.type;
             }
             mref_set_optype(op);
+            /*
+             * MASM (--masm): an explicit `ds:' override on a memory operand whose
+             * default segment is already DS is redundant, and MASM (like every
+             * mainstream x86 assembler but NASM) emits no prefix byte for it.
+             * NASM would emit a 3Eh prefix, which both diverges from MASM's bytes
+             * and, accumulated over a run of such operands, pushes `short' jumps
+             * out of rel8 range.  Drop it -- but only when the default segment is
+             * really DS: a stack register in the addressing mode (BP/SP/EBP/ESP)
+             * makes the default SS, so the `ds:' is meaningful and must stay.
+             * ESP is only ever a base, but NASM may hold it as the index pending
+             * the SIB base/index swap, so check both slots.
+             */
+            if (masm_mode && result->prefixes[PPS_SEG] == R_DS) {
+                int b = op->basereg, x = op->indexreg;
+                if (b != R_BP && b != R_SP && b != R_EBP && b != R_ESP &&
+                    x != R_BP && x != R_SP && x != R_EBP && x != R_ESP)
+                    result->prefixes[PPS_SEG] = 0;
+            }
         } else if ((op->type & FAR) && !far_jmp_ok) {
                 nasm_nonfatal("invalid use of FAR operand specifier");
                 recover = true;
