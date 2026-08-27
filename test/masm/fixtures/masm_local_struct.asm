@@ -17,4 +17,5 @@ DSC ends
 	mov DscBuf.dsc_access, al   ; [bp-8]    88 46 f8
 	mov ax, DscBuf.dsc_limit    ; [bp-8+2]  8b 46 fa
 	mov [DscBuf].dsc_flags, bl  ; [bp-8+1]  88 5e f9
+	mov cx, [DscBuf.dsc_limit]  ; dot INSIDE brackets [bp-8+2]  8b 4e fa
 	ret

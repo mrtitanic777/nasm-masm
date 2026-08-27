@@ -1798,6 +1798,205 @@ static void masm_lsz_add(const char *name, int bytes)
     masm_lszs = v;
 }
 
+/*
+ * Forward-`=' resolution by DEFERRED EMISSION.
+ *
+ * A MASM `=' is a redefinable numeric equate -> NASM `%assign', evaluated at
+ * preprocess time, so it cannot reference a symbol defined LATER (winkern.inc:
+ * `GA_INTFLAGS = ...GA_CODE_DATA...' with `GA_CODE_DATA EQU 02h' just below).
+ * Converting it to an assembly `equ' resolves the forward reference but gives
+ * the symbol a pass-1 value that differs from pass-2, destabilising NASM's
+ * optimising passes module-wide (a dead end -- see the git history).
+ *
+ * Instead, DEFER the `%assign': when a `=' RHS names symbols not yet defined,
+ * hold the assignment aside and emit it later, right after the line that
+ * defines its LAST dependency.  By then every dependency is a backward EQU/=
+ * that `%assign' can read, so the symbol is evaluated to a plain preprocess
+ * literal -- no forward `equ', no pass instability.  `masm_defined_tab' tracks
+ * the EQU/= constants seen so far this pass; `masm_pendings' holds the waiting
+ * assignments.  A `=' whose forward dependency is never defined (a label, or a
+ * symbol behind an untaken `ifdef') simply stays pending and the name is
+ * undefined at use -- exactly the pre-existing behaviour, never worse.
+ */
+struct masm_nameset { struct masm_nameset *next; char *name; };
+static struct masm_nameset *masm_defined_tab;   /* EQU/= constants defined so far */
+static struct masm_nameset *masm_const_tab;     /* all EQU/= numeric consts (pre-scan) */
+
+struct masm_pending {
+    struct masm_pending *next;
+    char *name;
+    char *expr;                 /* translated RHS, awaiting its dependencies */
+    struct masm_nameset *deps;  /* forward dependency names still undefined */
+};
+static struct masm_pending *masm_pendings;
+
+static bool masm_nameset_has(struct masm_nameset *s, const char *name)
+{
+    for (; s; s = s->next)
+        if (!nasm_stricmp(s->name, name))
+            return true;
+    return false;
+}
+
+static void masm_nameset_add(struct masm_nameset **s, const char *name)
+{
+    struct masm_nameset *n;
+    if (!name || !*name || masm_nameset_has(*s, name))
+        return;
+    nasm_new(n);
+    n->name = nasm_strdup(name);
+    n->next = *s;
+    *s = n;
+}
+
+static void masm_nameset_free(struct masm_nameset **s)
+{
+    struct masm_nameset *n;
+    while ((n = *s)) {
+        *s = n->next;
+        nasm_free(n->name);
+        nasm_free(n);
+    }
+}
+
+/* MASM word operators / keywords that look like identifiers but are not
+ * symbols -- skipped when scanning a `=' RHS for its dependency names. */
+static bool masm_is_wordop(const char *w, size_t n)
+{
+    static const char *const ops[] = {
+        "and","or","xor","not","shl","shr","mod","dup","ptr",
+        "eq","ne","lt","le","gt","ge", NULL
+    };
+    int i;
+    for (i = 0; ops[i]; i++)
+        if (strlen(ops[i]) == n && !nasm_strnicmp(w, ops[i], n))
+            return true;
+    return false;
+}
+
+/*
+ * A constant symbol `name' has just been defined this pass.  Record it and
+ * release any pending `=' whose dependencies are now all satisfied, emitting
+ * its `%assign' to the line queue; a released assignment defines its own name,
+ * which may in turn satisfy others, so iterate to a fixpoint.
+ */
+static void masm_note_defined(const char *name)
+{
+    bool changed = true;
+    masm_nameset_add(&masm_defined_tab, name);
+    while (changed) {
+        struct masm_pending **pp = &masm_pendings, *p;
+        changed = false;
+        while ((p = *pp)) {
+            struct masm_nameset **dp = &p->deps, *d;
+            while ((d = *dp)) {         /* drop dependencies now defined */
+                if (masm_nameset_has(masm_defined_tab, d->name)) {
+                    *dp = d->next;
+                    nasm_free(d->name);
+                    nasm_free(d);
+                } else {
+                    dp = &d->next;
+                }
+            }
+            if (!p->deps) {             /* all satisfied -> emit now */
+                char buf[600];
+                snprintf(buf, sizeof buf, "%%iassign %s %s", p->name, p->expr);
+                masm_ppq_add(nasm_strdup(buf));
+                masm_nameset_add(&masm_defined_tab, p->name);
+                *pp = p->next;
+                nasm_free(p->name);
+                nasm_free(p->expr);
+                nasm_free(p);
+                changed = true;
+            } else {
+                pp = &p->next;
+            }
+        }
+    }
+}
+
+/* A pre-scan identifier char: MASM constant names use alnum plus _ @ ? $. */
+static bool masm_ps_idchar(int c)
+{
+    return nasm_isalnum(c) || c == '_' || c == '@' || c == '?' || c == '$';
+}
+
+/*
+ * Pre-scan an input file (from the current position to EOF, then rewind) for
+ * every symbol it defines by a numeric `EQU' or a `=', recording the names in
+ * `masm_const_tab'.  Deferral of a forward `=' (masm_note_defined) is gated on
+ * this set: a `=' RHS name is treated as a deferrable forward dependency only
+ * if it is a genuine constant defined somewhere -- otherwise (a struct size, an
+ * extern, a label, a macro constant, a build symbol) it is emitted immediately,
+ * exactly as before, and never held pending on a name that will never resolve.
+ * Text/memory/`$'-relative equates are excluded: `%assign' cannot read them.
+ */
+static void masm_prescan_consts(FILE *f)
+{
+    long pos;
+    char buf[1024];
+
+    if (!f)
+        return;
+    pos = ftell(f);
+    if (pos < 0)
+        return;
+
+    for (;;) {
+        int c;
+        size_t i = 0;
+        char *p, name[128];
+        size_t nn;
+
+        /* read one physical line (truncate over-long lines; fine for scanning) */
+        while ((c = fgetc(f)) != EOF && c != '\n') {
+            if (c == '\r')
+                continue;
+            if (i < sizeof buf - 1)
+                buf[i++] = (char)c;
+        }
+        buf[i] = '\0';
+
+        /* strip a trailing comment so a `;'-hidden `$' does not disqualify */
+        p = strchr(buf, ';');
+        if (p)
+            *p = '\0';
+
+        p = buf;
+        while (*p == ' ' || *p == '\t')
+            p++;
+        if (masm_ps_idchar((unsigned char)*p) && !nasm_isdigit((unsigned char)*p)) {
+            nn = 0;
+            while (masm_ps_idchar((unsigned char)*p)) {
+                if (nn < sizeof name - 1)
+                    name[nn++] = *p;
+                p++;
+            }
+            name[nn] = '\0';
+            while (*p == ' ' || *p == '\t')
+                p++;
+            if (*p == '=' && p[1] != '=') {
+                masm_nameset_add(&masm_const_tab, name);
+            } else if ((p[0]=='e'||p[0]=='E') && (p[1]=='q'||p[1]=='Q') &&
+                       (p[2]=='u'||p[2]=='U') &&
+                       (p[3]==' '||p[3]=='\t')) {
+                const char *v = p + 3;
+                while (*v == ' ' || *v == '\t')
+                    v++;
+                if (*v && *v != '<' && *v != '[' && !strchr(v, '$') &&
+                    nasm_stricmp(v, "near") && nasm_stricmp(v, "far") &&
+                    nasm_stricmp(v, "short"))
+                    masm_nameset_add(&masm_const_tab, name);
+            }
+        }
+
+        if (c == EOF)
+            break;
+    }
+
+    fseek(f, pos, SEEK_SET);
+}
+
 static struct masm_sdef *masm_sdef_find(const char *name)
 {
     struct masm_sdef *s;
@@ -1910,6 +2109,21 @@ static bool masm_is_segreg2(const char *s)
     int i;
     for (i = 0; sr[i]; i++)
         if (!nasm_strnicmp(s, sr[i], 2))
+            return true;
+    return false;
+}
+
+/* A general-purpose base/index register (16- or 32-bit), for `[reg.field]'
+ * struct-member access.  Exact match, case-insensitive. */
+static bool masm_is_gpreg(const char *s)
+{
+    static const char *const rg[] = {
+        "ax","bx","cx","dx","si","di","bp","sp",
+        "eax","ebx","ecx","edx","esi","edi","ebp","esp", NULL
+    };
+    int i;
+    for (i = 0; rg[i]; i++)
+        if (!nasm_stricmp(s, rg[i]))
             return true;
     return false;
 }
@@ -2221,7 +2435,7 @@ static char *masm_rewrite_line(char *line)
              * field stays bare so its own %idefine (-> STRUCT.field offset)
              * resolves it; any sub-member chain after it is carried along.
              */
-            if (depth == 0 && p[0] != '.') {
+            if (p[0] != '.') {
                 size_t dp = 0;
                 while (dp < wl && p[dp] != '.')
                     dp++;
@@ -2250,22 +2464,34 @@ static char *masm_rewrite_line(char *line)
                     } else {
                         full[0] = '\0';
                     }
-                    if (masm_is_field(f1) && !masm_sdef_find(base) &&
-                        (masm_type_query(base) > 0 || masm_lbuf_has(base)) &&
+                    /* A register base inside `[]' may take a bare NUMERIC `.'
+                     * displacement (`[bp.6]' -> `[bp + 6]') as well as a named
+                     * struct member -- MASM uses `.' for both. */
+                    bool reg_in_br = depth > 0 && masm_is_gpreg(base);
+                    bool numfield = f1[0] && f1[strspn(f1, "0123456789")] == '\0';
+                    if (((masm_is_field(f1) &&
+                          (masm_type_query(base) > 0 || masm_lbuf_has(base) ||
+                           reg_in_br)) ||
+                         (numfield && reg_in_br)) &&
+                        !masm_sdef_find(base) &&
                         masm_type_query(full) == 0) {
                         /*
                          * base must be either a registered DATA label
-                         * (extern/DB-DW-DD data) or a `localV' stack BUFFER
-                         * (masm_lbufs), so `[base + field]' is a real address --
-                         * for the buffer it expands to `[[bp-o] + field]', which
-                         * the mref parser collapses to `[bp-o + field]'.  A far
-                         * -pointer param/local is neither, so `ptr.sel' keeps
-                         * using its seg_/off_/.sel half accessor (whose suffix
-                         * names ARE struct fields, so they must not be rewritten
-                         * here).
+                         * (extern/DB-DW-DD data), a `localV' stack BUFFER
+                         * (masm_lbufs), or -- inside `[]' -- a base register, so
+                         * `[base + field]' is a real address.  For the buffer it
+                         * expands to `[[bp-o] + field]', which the mref parser
+                         * collapses to `[bp-o + field]'.  A far-pointer param/
+                         * local is neither, so `ptr.sel' keeps using its seg_/
+                         * off_/.sel half accessor (whose suffix names ARE struct
+                         * fields, so they must not be rewritten here).
                          */
-                        o += sprintf(o, "[%.*s + %.*s]", (int)dp, p,
-                                     (int)(wl - dp - 1), p + dp + 1);
+                        if (depth == 0)         /* outside `[]': wrap in a memref */
+                            o += sprintf(o, "[%.*s + %.*s]", (int)dp, p,
+                                         (int)(wl - dp - 1), p + dp + 1);
+                        else                    /* already inside `[]': `base + field' */
+                            o += sprintf(o, "%.*s + %.*s", (int)dp, p,
+                                         (int)(wl - dp - 1), p + dp + 1);
                         p += wl;
                         changed = true;
                         continue;
@@ -3866,18 +4092,56 @@ static char *masm_pp_xform(char *line)
             ex2 = masm_rewrite_line(nasm_strdup(ex));  /* SIZE/SIZEOF/... */
             /*
              * A MASM `=' is a redefinable numeric equate -> %assign (evaluated
-             * now).  We do NOT bind it lazily (%define) to tolerate a forward
-             * reference in the RHS: `=' also spells counters (`n = 0' then
-             * `n = n + 1'), and those are pasted into identifiers (`foo&n'),
-             * where a textual/parenthesised value would break.  A forward
-             * reference in a `=' expression is the single-pass preprocessor's
-             * boundary against MASM's two passes.  %iassign, not %assign:
-             * MASM symbols are case-insensitive (matching the label folding).
+             * now).  If its RHS names a symbol NOT yet defined this pass, the
+             * %assign would fail; instead DEFER it (see masm_note_defined) --
+             * hold it aside and emit it once every such dependency is defined,
+             * so the forward reference resolves without an assembly `equ'.
+             * Counters (`n = 0' then `n = n + 1') reference only backward names,
+             * so they are never deferred.  %iassign, not %assign: MASM symbols
+             * are case-insensitive (matching the label folding).
              */
+            {
+                struct masm_nameset *fdeps = NULL;
+                const char *s = ex2;
+                while (*s) {
+                    if (nasm_isidchar(*s)) {
+                        const char *st = s;
+                        bool isnum = nasm_isdigit(*s);
+                        while (nasm_isidchar(*s))
+                            s++;
+                        if (!isnum && !masm_is_wordop(st, s - st)) {
+                            char id[128];
+                            size_t n = s - st;
+                            if (n < sizeof id) {
+                                memcpy(id, st, n);
+                                id[n] = '\0';
+                                if (nasm_stricmp(id, w1) &&      /* not self */
+                                    !masm_nameset_has(masm_defined_tab, id) &&
+                                    masm_nameset_has(masm_const_tab, id))
+                                    masm_nameset_add(&fdeps, id);
+                            }
+                        }
+                    } else {
+                        s++;
+                    }
+                }
+                if (fdeps) {                 /* forward -> defer the assignment */
+                    struct masm_pending *pd;
+                    nasm_new(pd);
+                    pd->name = nasm_strdup(w1);
+                    pd->expr = ex2;          /* takes ownership */
+                    pd->deps = fdeps;
+                    pd->next = masm_pendings;
+                    masm_pendings = pd;
+                    nasm_free(line);
+                    return nasm_strdup("");
+                }
+            }
             snprintf(tmp, sizeof tmp, "%%iassign %s %s", w1, ex2);
             nasm_free(ex2);
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
+            masm_note_defined(w1);
             return masm_ppq_get();
         }
     }
@@ -4365,6 +4629,7 @@ static char *masm_pp_xform(char *line)
              * preprocessor.
              */
             char ex[512], *xr;
+            bool numeq = false;
             masm_xlat_ops(ex, sizeof ex, masm_skip_typeptr(v));
             xr = ex;
             while (*xr == ' ' || *xr == '\t')
@@ -4391,9 +4656,12 @@ static char *masm_pp_xform(char *line)
                 char *rr = masm_rewrite_line(nasm_strdup(xr));
                 snprintf(tmp, sizeof tmp, "%s equ %s", w1, rr);
                 nasm_free(rr);
+                numeq = true;           /* a numeric constant equate */
             }
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
+            if (numeq)                  /* may release deferred forward-`=' */
+                masm_note_defined(w1);
             return masm_ppq_get();
         }
     }
@@ -7762,6 +8030,8 @@ static int do_directive(Token *tline, Token **output, bool suppressed)
             inc->where   = istk->where;
             inc->lineinc = 0;
             istk = inc;
+            if (masm_mode)      /* pre-scan this include for EQU/= constant names */
+                masm_prescan_consts(istk->fp);
             if (!istk->noline) {
                 src_set(0, fhe ? fhe->path : p);
                 istk->where = src_where();
@@ -11637,6 +11907,16 @@ void pp_reset(const char *file, enum preproc_mode mode,
     unique = 0;
     masm_anon_seq = 0;          /* MASM @@/@F/@B labels: same names every pass */
     if (masm_locif_cond) { nasm_free(masm_locif_cond); masm_locif_cond = NULL; }
+    masm_nameset_free(&masm_defined_tab);       /* forward-`=' deferral: per pass */
+    masm_nameset_free(&masm_const_tab);         /* rebuilt as files are opened */
+    while (masm_pendings) {
+        struct masm_pending *p = masm_pendings;
+        masm_pendings = p->next;
+        masm_nameset_free(&p->deps);
+        nasm_free(p->name);
+        nasm_free(p->expr);
+        nasm_free(p);
+    }
     deplist = dep_list;
     pp_mode = mode;
 
@@ -11668,6 +11948,8 @@ void pp_reset(const char *file, enum preproc_mode mode,
 	nasm_fatalf(ERR_NOFILE, "unable to open input file `%s'%s%s",
                     file, errno ? " " : "", errno ? strerror(errno) : "");
     }
+    if (masm_mode)              /* pre-scan the top file for EQU/= constant names */
+        masm_prescan_consts(istk->fp);
     src_set(0, file);
     istk->where = src_where();
     istk->lineinc = 1;
