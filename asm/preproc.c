@@ -2274,6 +2274,28 @@ static char *masm_rewrite_line(char *line)
             int half = -1;
             while (nasm_isidchar(*q) || *q == '.')
                 q++;
+            mlen = q - ms;
+            /* `].SIZE t' / `].SIZEOF t' / `].TYPE t' -> ` + t_size]': a size
+             * operator after the member dot (`lea si,[si].SIZE new_rsrc'). */
+            if (((mlen == 4 && !nasm_strnicmp(ms, "size", 4)) ||
+                 (mlen == 6 && !nasm_strnicmp(ms, "sizeof", 6)) ||
+                 (mlen == 4 && !nasm_strnicmp(ms, "type", 4))) &&
+                (*q == ' ' || *q == '\t')) {
+                const char *a = q;
+                while (*a == ' ' || *a == '\t')
+                    a++;
+                if (nasm_isidstart(*a)) {
+                    const char *ts = a;
+                    while (nasm_isidchar(*a) || *a == '.')
+                        a++;
+                    o += sprintf(o, " + %.*s_size]", (int)(a - ts), ts);
+                    p = a;
+                    if (depth > 0)
+                        depth--;
+                    changed = true;
+                    continue;
+                }
+            }
             /* strip a trailing far-pointer half suffix (`.member.sel'): the
              * `.lo'/`.off' word is +0, `.hi'/`.sel'/`.seg' is +2.  Only when the
              * chain's FIRST component is a struct member/field, never a struct
