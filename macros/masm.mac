@@ -141,8 +141,18 @@ USE: masm
 ;; USE16/USE32/USE64 (below) overrides for an individual segment.
 ;; Set both NASM's live BITS and the struc-safe __?MASM_BITS?__ shadow.
 %imacro __?masm_cpu?__ 1.nolist
-  [bits %1]
   %assign __?MASM_BITS?__ %1
+  ; In a flat/bin assembly there are no segments to carry a USE size, so the CPU
+  ; directive is what sets the code bitness -- emit [bits].  With object
+  ; segments, USE is fixed per-segment (captured at definition, re-asserted on
+  ; entry by sBegin/segment), and a CPU directive only selects the instruction
+  ; set: it must NOT re-size the current segment.  Win3.1 defines its segments
+  ; USE16 under .286 and then flips to .386p to run 386 instructions *inside*
+  ; those USE16 segments; emitting [bits 32] there would bloat every instruction
+  ; with a spurious operand-size prefix and push `short' jumps out of range.
+  %ifidn __?OUTPUT_FORMAT?__, bin
+    [bits %1]
+  %endif
 %endmacro
 %idefine .8086 __?masm_cpu?__ 16
 %idefine .186  __?masm_cpu?__ 16

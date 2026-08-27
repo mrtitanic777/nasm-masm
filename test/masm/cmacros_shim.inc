@@ -21,6 +21,12 @@
 ;;   the contents).  <ln>BASE is the segment/selector value.
 %imacro createSeg 2-*
     %define __cs_%2 %1
+    ;; A segment's USE size (16/32) is fixed when it is DEFINED, from the CPU
+    ;; mode in effect here -- NOT from whatever CPU directive is active later
+    ;; when a body is emitted into it.  Win3.1 code defines its segments under
+    ;; .286 and only later flips to .386p to use 386 instructions inside those
+    ;; still-USE16 segments; capture the bitness now so sBegin can re-assert it.
+    %assign __csbits_%2 __?MASM_BITS?__
     %idefine %[%2]OFFSET OFFSET
     %ixdefine %[%2]BASE %1
     ;; Declare the real segment so its NAME is a usable selector value
@@ -58,6 +64,13 @@
         %xdefine __?SECT?__ [section %1]
     %endif
     __?SECT?__
+    ;; Re-assert the segment's definition-time USE size (see createSeg): a switch
+    ;; inherits the current live BITS, which a later .386p would have bumped to
+    ;; 32 even though this segment is USE16 -- bloating every instruction with a
+    ;; spurious operand-size prefix (and pushing `short' jumps out of range).
+    %ifdef __csbits_%1
+        [bits __csbits_%1]
+    %endif
 %endmacro
 %imacro sEnd 0-1
 %endmacro
