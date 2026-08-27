@@ -2759,8 +2759,31 @@ static char *masm_pp_xform(char *line)
     if (!nasm_stricmp(w1, "localv")) {
         const char *q = p;
         char nm[128];
+        const char *c;
         if (masm_word(&q, nm, sizeof nm))
             masm_lbuf_add(nm);
+        /*
+         * The size argument is often a `<...>'-wrapped expression whose space
+         * would otherwise split it (`localV n, <SIZE S>' / `<SIZE S + 2>').
+         * NASM separates macro args on commas, not the `<>' group, so unwrap it
+         * (`localV n, SIZE S') -- the size then flows through the normal SIZE
+         * operator rewrite and reaches the shim `localV' as one argument.
+         */
+        c = strchr(p, ',');
+        if (c) {
+            const char *s = c + 1;
+            while (*s == ' ' || *s == '\t')
+                s++;
+            if (*s == '<') {
+                const char *e = strchr(s, '>');
+                if (e && e > s + 1) {
+                    snprintf(tmp, sizeof tmp, "%s %.*s%.*s", w1,
+                             (int)(s - p), p, (int)(e - s - 1), s + 1);
+                    nasm_free(line);
+                    return masm_rewrite_line(nasm_strdup(tmp));
+                }
+            }
+        }
     }
 
     /*
