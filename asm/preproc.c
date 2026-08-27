@@ -1811,6 +1811,15 @@ static char *masm_rewrite_line(char *line)
             o += sprintf(o, " + ");
             while (nasm_isidchar(*q) || *q == '.')
                 *o++ = *q++;
+            if (*q == '[') {
+                /* `].member[idx]'  ->  ` + member + idx]': fold the index into
+                 * the same bracket group rather than closing here.  Depth is
+                 * unchanged -- the index's own `]' still closes the group. */
+                o += sprintf(o, " + ");
+                p = q + 1;
+                changed = true;
+                continue;
+            }
             *o++ = ']';
             p = q;
             if (depth > 0)              /* this `]' closes a bracket */
@@ -3103,6 +3112,31 @@ static char *masm_pp_xform(char *line)
         if (sd->is_union)
             return nasm_strdup("");             /* union: nothing emitted yet */
         snprintf(tmp, sizeof tmp, "struc %s", w1);
+        masm_ppq_add(nasm_strdup(tmp));
+        return masm_ppq_get();
+    }
+
+    if (l2 && !nasm_stricmp(w2, "label")) {
+        /*
+         * NAME LABEL type  -- define NAME at the current location with the given
+         * type.  Emit the plain label `NAME:'; for a data type (BYTE/WORD/...)
+         * also register it so a bare reference reads as its contents, matching
+         * a DB/DW/... definition.  NEAR/FAR/PROC are code labels (no data type).
+         */
+        char ty[32];
+        const char *r = p;
+        size_t tn = 0;
+        int sz;
+        while (*r == ' ' || *r == '\t')
+            r++;
+        while ((nasm_isidchar(*r)) && tn + 1 < sizeof ty)
+            ty[tn++] = *r++;
+        ty[tn] = '\0';
+        sz = masm_type_bytes(ty);       /* 0 for near/far/proc/unknown */
+        if (sz > 0)
+            masm_type_note(w1, sz);
+        snprintf(tmp, sizeof tmp, "%s:", w1);
+        nasm_free(line);
         masm_ppq_add(nasm_strdup(tmp));
         return masm_ppq_get();
     }
