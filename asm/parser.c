@@ -1329,6 +1329,19 @@ restart_parse:
                 if (i == ']') {
                     bracket--;
                     i = stdscan(NULL, &tokval);
+                    /*
+                     * MASM (--masm) folds a trailing `[idx]' or `+/- disp' into
+                     * the SAME memory operand: a param/local expands to a bound
+                     * `[bp-o]', so `Limit[2]' is `[bp-o][2]' and `Limit+2' is
+                     * `[bp-o]+2', both meaning `[bp-o+2]'.  parse_mref seeds from
+                     * op's current base/index/offset and accumulates, so fold the
+                     * expression parsed so far and re-enter to parse the rest.
+                     */
+                    if (masm_mode && (i == '[' || i == '+' || i == '-')) {
+                        if (parse_mref(op, value))
+                            goto fail;
+                        goto mref_more;
+                    }
                 } else {
                     nasm_nonfatal("expecting ] at end of memory operand");
                     recover = true;
