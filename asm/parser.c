@@ -1167,7 +1167,20 @@ restart_parse:
                 int msz = masm_type_get(tokval.t_charptr);
                 if (msz) {
                     mref = true;                /* -> [label] */
-                    if (!setsize)
+                    /*
+                     * LES/LDS/LFS/LGS/LSS load a far pointer whose operand
+                     * size follows the destination register (16/32), not the
+                     * pointer's byte width, so a `dword'/`fword' size from the
+                     * label's type conflicts: `lds dx, myptr' would become
+                     * `lds dx, dword [myptr]' = invalid operand sizes.  Leave
+                     * the far-pointer load unsized and let the register decide.
+                     */
+                    bool farload = result->opcode == I_LDS ||
+                                   result->opcode == I_LES ||
+                                   result->opcode == I_LFS ||
+                                   result->opcode == I_LGS ||
+                                   result->opcode == I_LSS;
+                    if (!setsize && !farload)
                         op->type |= masm_size_bits(msz);
                 }
             }
