@@ -1691,6 +1691,8 @@ static struct masm_sdef *masm_sdefs;      /* all completed struct definitions */
 static struct masm_sdef *masm_sdef_cur;   /* the one currently being defined  */
 static bool masm_in_struct;
 static char masm_comment_delim;           /* inside a COMMENT block: its delimiter */
+static char *masm_locif_cond;             /* inside `if (<$-expr>)': the condition */
+static bool masm_locif_ife;               /* the block was IFE (invert the test) */
 
 /*
  * Names declared with cmacros `localV name,size' -- a stack BUFFER local, bound
@@ -1989,6 +1991,31 @@ static char *masm_rewrite_line(char *line)
         if (*p == ']' && p[1] == '[') {
             o += sprintf(o, " + ");
             p += 2;
+            changed = true;
+            continue;
+        }
+        /*
+         * MASM `THIS <type>' operator -> `$' (the current address).  Used to
+         * name a location: `boottdb equ this byte'.  A trailing size keyword is
+         * only the type of the address and carries no meaning for NASM.
+         */
+        if ((p == line || !nasm_isidchar(p[-1])) &&
+            !nasm_strnicmp(p, "this", 4) && !nasm_isidchar(p[4])) {
+            const char *q = p + 4;
+            while (*q == ' ' || *q == '\t')
+                q++;
+            if (nasm_isidstart(*q)) {           /* an optional size keyword */
+                const char *e = q;
+                char kw[16];
+                size_t kn = 0;
+                while (nasm_isidchar(*e) && kn + 1 < sizeof kw)
+                    kw[kn++] = *e++;
+                kw[kn] = '\0';
+                if (masm_type_bytes(kw) > 0)
+                    q = e;                      /* consume the size type */
+            }
+            *o++ = '$';
+            p = q;
             changed = true;
             continue;
         }
@@ -2769,6 +2796,52 @@ static char *masm_pp_xform(char *line)
     l1 = masm_word(&p, w1, sizeof w1);
     if (!l1)
         return line;
+
+    /*
+     * Assembly-time `if (<expr with $>) / <body> / endif' -- a location-counter
+     * conditional (ldboot's paragraph alignment: `rept 16 / if ($-boottdb) and
+     * 0Fh / db 0 / endif / endm').  NASM's %if is preprocess-only and cannot
+     * read `$', so translate the block into an assembly-time conditional
+     * EMISSION: wrap each body line in `times ((cond) != 0) <line>' (IFE:
+     * `== 0'), which emits the line 0 or 1 times by the live condition.
+     */
+    if (masm_locif_cond) {
+        if (!nasm_stricmp(w1, "endif")) {
+            nasm_free(masm_locif_cond);
+            masm_locif_cond = NULL;
+            nasm_free(line);
+            return nasm_strdup("");
+        }
+        if (masm_is_cond(w1) && nasm_stricmp(w1, "else") &&
+            nasm_stricmp(w1, "elseif")) {
+            /* a nested conditional -- give up on this block, pass through */
+            nasm_free(masm_locif_cond);
+            masm_locif_cond = NULL;
+            return line;
+        }
+        {
+            char *body = masm_rewrite_line(nasm_strdup(line));
+            const char *b = body ? body : "";
+            while (*b == ' ' || *b == '\t')
+                b++;
+            snprintf(tmp, sizeof tmp, "times ((%s) %s 0) %s", masm_locif_cond,
+                     masm_locif_ife ? "==" : "!=", b);
+            nasm_free(body);
+            nasm_free(line);
+            return nasm_strdup(tmp);
+        }
+    }
+    if ((!nasm_stricmp(w1, "if") || !nasm_stricmp(w1, "ife")) &&
+        strchr(p, '$')) {
+        char ex[256];
+        masm_xlat_ops(ex, sizeof ex, p);
+        { size_t n = strlen(ex);
+          while (n && (ex[n-1]==' '||ex[n-1]=='\t'||ex[n-1]=='\r')) ex[--n]='\0'; }
+        masm_locif_cond = nasm_strdup(ex);
+        masm_locif_ife = !nasm_stricmp(w1, "ife");
+        nasm_free(line);
+        return nasm_strdup("");
+    }
 
     /*
      * A label prefixing a MASM string instruction (`foint: lods byte ptr
@@ -11563,6 +11636,7 @@ void pp_reset(const char *file, enum preproc_mode mode,
     nested_rep_count = 0;
     unique = 0;
     masm_anon_seq = 0;          /* MASM @@/@F/@B labels: same names every pass */
+    if (masm_locif_cond) { nasm_free(masm_locif_cond); masm_locif_cond = NULL; }
     deplist = dep_list;
     pp_mode = mode;
 
