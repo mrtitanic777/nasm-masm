@@ -200,6 +200,13 @@ static expr *segment_part(expr * e)
     } else if (seg & SEG_ABS) {
         return scalarvect(seg & ~SEG_ABS);
     } else if (seg & 1) {
+        /*
+         * The operand is already a segment base.  MASM allows `SEG segname'
+         * (and `SEG group') to name a segment's own base value -- it just
+         * yields that base -- so pass the relocatable through unchanged.
+         */
+        if (masm_mode)
+            return e;
         nasm_nonfatal("SEG applied to something which"
                       " is already a segment base");
         return NULL;
