@@ -2841,6 +2841,25 @@ static char *masm_pp_xform(char *line)
         return nasm_strdup("");
     }
 
+    /*
+     * global<W/D/B> / static<W/D/B> name, <init-expr> [, count] -- MASM groups
+     * a multi-token data initialiser in <...> (so its spaces do not split it
+     * into extra args): `globalW p,<dataOffset foo>'.  Strip the outer <...>
+     * (leaving inner `<<' shift operators alone) so the shim macro receives the
+     * bare expression; then fall through to the normal operator rewrite.
+     */
+    if ((!nasm_strnicmp(w1, "global", 6) || !nasm_strnicmp(w1, "static", 6)) &&
+        (w1[6]=='W'||w1[6]=='w'||w1[6]=='D'||w1[6]=='d'||w1[6]=='B'||w1[6]=='b')
+        && w1[7] == '\0' && strchr(p, '<')) {
+        char *lt = strchr(line, '<');
+        char *gt = strrchr(line, '>');
+        if (lt && gt && gt > lt) {
+            memmove(gt, gt + 1, strlen(gt + 1) + 1);   /* drop the `>' */
+            memmove(lt, lt + 1, strlen(lt + 1) + 1);   /* drop the `<' */
+        }
+        return masm_rewrite_line(line);                /* size/. operators */
+    }
+
     if (!nasm_stricmp(w1, "bits")) {
         /*
          * A raw `bits N' (rather than .386/.MODEL) must also update the struc-
