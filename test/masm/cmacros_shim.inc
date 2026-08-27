@@ -49,17 +49,22 @@
 %endmacro
 
 %imacro sBegin 1
+    ;; Switch to the logical segment's real section AND keep NASM's section-
+    ;; reactivation macro (__?SECT?__) current, so a MASM SEGMENT/ENDS pair (or a
+    ;; STRUCT) opened inside this body can resume THIS section when it closes.
     %ifdef __cs_%1
-        [section %[__cs_%1]]
+        %xdefine __?SECT?__ [section %[__cs_%1]]
     %else
-        [section %1]
+        %xdefine __?SECT?__ [section %1]
     %endif
+    __?SECT?__
 %endmacro
 %imacro sEnd 0-1
 %endmacro
 
 %imacro DataBegin 0-*
-    [section _DATA]
+    %xdefine __?SECT?__ [section _DATA]
+    __?SECT?__
 %endmacro
 %imacro DataEnd 0-*
 %endmacro

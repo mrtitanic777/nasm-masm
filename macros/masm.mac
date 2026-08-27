@@ -53,6 +53,9 @@ USE: masm
 ;; The CPU directives and .MODEL keep it in step; default 16 (MASM's 8086).
 %assign __?MASM_BITS?__ 16
 
+;; Depth of the MASM SEGMENT/ENDS nesting stack (see the `segment'/`ends' macros).
+%assign __masm_segsp 0
+
 %unimacro segment 1+
 
 ;; MASM: `NAME segment [align] [combine] [useNN] ['class']`.  Switch to a NASM
@@ -72,24 +75,41 @@ USE: masm
   ; dropped, as they do not change the code bytes), and NASM's own `segment NAME
   ; attrs' (no label -> %00 empty, name+attrs in %1, passed through).  USE follows
   ; the struc-safe CPU-mode shadow.
+  ;
+  ; MASM SEGMENT/ENDS nest: `ENDS' resumes the segment that was open before the
+  ; matching SEGMENT (a data table emitted between them does not disturb the
+  ; enclosing code segment).  Save the current section-reactivation directive
+  ; (__?SECT?__, kept current by section/sBegin/segment) on a numbered stack so
+  ; `ends' can restore it, then update __?SECT?__ to the segment we switch to.
   %assign %%usebits __?MASM_BITS?__
+  %xdefine __masm_segsave%[__masm_segsp] __?SECT?__
+  %assign __masm_segsp __masm_segsp + 1
   %ifidn __?OUTPUT_FORMAT?__, bin
     %ifempty %00
-      [segment %1]                       ; segment NAME attrs (NASM form)
+      %xdefine __?SECT?__ [segment %1]   ; segment NAME attrs (NASM form)
     %else
-      [segment %00]                      ; NAME segment mattrs (MASM form)
+      %xdefine __?SECT?__ [segment %00]  ; NAME segment mattrs (MASM form)
     %endif
   %else
     %ifempty %00
-      [segment %1 use %+ %%usebits]
+      %xdefine __?SECT?__ [segment %1 use %+ %%usebits]
     %else
-      [segment %00 use %+ %%usebits]
+      %xdefine __?SECT?__ [segment %00 use %+ %%usebits]
     %endif
   %endif
+  __?SECT?__
 %endmacro
 
 %imacro ends 0+.nolist
   %null ends %00
+  ; Resume the segment that was open before the matching SEGMENT (see above).
+  ; Only when a segment is actually on the stack -- a struct `NAME ENDS' is
+  ; consumed earlier (in --masm's line translator) and never reaches here.
+  %if __masm_segsp > 0
+    %assign __masm_segsp __masm_segsp - 1
+    %xdefine __?SECT?__ __masm_segsave%[__masm_segsp]
+    __?SECT?__
+  %endif
 %endmacro
 
 ;; proc/endp/ret/invoke are the authoring-dialect PROC/INVOKE (Track B / B5),
