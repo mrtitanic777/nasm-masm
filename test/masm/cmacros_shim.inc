@@ -22,7 +22,7 @@
 %imacro createSeg 2-*
     %define __cs_%2 %1
     %idefine %[%2]OFFSET OFFSET
-    %xdefine %[%2]BASE %1
+    %ixdefine %[%2]BASE %1
 %endmacro
 %imacro defGrp 0-*
 %endmacro
