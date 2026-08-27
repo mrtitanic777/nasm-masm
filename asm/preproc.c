@@ -2296,6 +2296,27 @@ static char *masm_rewrite_line(char *line)
                     continue;
                 }
             }
+            /* `[reg].TYPE.member' -> `[reg + member]': MASM 5.x struct fields are
+             * global offset constants, so a TYPE-qualified member is just the
+             * member's offset (even for a member declared in another struct).
+             * Drop a leading struct-TYPE component from the chain. */
+            mlen = q - ms;
+            fc = 0;
+            while (fc < mlen && ms[fc] != '.')
+                fc++;
+            if (fc < mlen) {                    /* a `.member' follows */
+                char tcb[128];
+                if (fc < sizeof tcb) {
+                    struct masm_sdef *td;
+                    memcpy(tcb, ms, fc);
+                    tcb[fc] = '\0';
+                    /* Only a plain STRUC has global member offsets; a UNION or
+                     * RECORD keeps its `TYPE.member' qualified form. */
+                    td = masm_sdef_find(tcb);
+                    if (td && !td->is_union && !td->is_record)
+                        ms += fc + 1;           /* -> bare member chain */
+                }
+            }
             /* strip a trailing far-pointer half suffix (`.member.sel'): the
              * `.lo'/`.off' word is +0, `.hi'/`.sel'/`.seg' is +2.  Only when the
              * chain's FIRST component is a struct member/field, never a struct
@@ -2536,12 +2557,17 @@ static char *masm_rewrite_line(char *line)
                      * to the bare (global) member, but only OUTSIDE brackets so a
                      * type-qualified memory offset is untouched.
                      */
-                    if (depth == 0 && masm_sdef_find(base) &&
-                        masm_is_field(f1) && masm_type_query(full) == 0) {
-                        o += sprintf(o, "%.*s", (int)(wl - dp - 1), p + dp + 1);
-                        p += wl;
-                        changed = true;
-                        continue;
+                    {
+                        struct masm_sdef *bt = masm_sdef_find(base);
+                        if (depth == 0 && bt &&
+                            !bt->is_union && !bt->is_record &&
+                            masm_is_field(f1) && masm_type_query(full) == 0) {
+                            o += sprintf(o, "%.*s",
+                                         (int)(wl - dp - 1), p + dp + 1);
+                            p += wl;
+                            changed = true;
+                            continue;
+                        }
                     }
                     /* A register base inside `[]' may take a bare NUMERIC `.'
                      * displacement (`[bp.6]' -> `[bp + 6]'), a named EQU/= constant
