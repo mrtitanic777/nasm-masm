@@ -2545,19 +2545,35 @@ static char *masm_pp_xform(char *line)
      * A bare MASM string instruction sized by its (documentation) operand:
      * `lods byte ptr es:[si]' -> `lodsb'.  NASM has only the b/w/d/q-suffixed
      * mnemonics, so pick the suffix from a size keyword in the operand and drop
-     * the operand.
+     * the operand.  An optional REP-family prefix is carried through:
+     * `rep stos dword ptr es:[edi]' -> `rep stosd'.
      */
     {
         static const char *const sops[] = {
             "lods", "stos", "movs", "scas", "cmps", "ins", "outs", NULL
         };
+        const char *opw = w1;           /* the string-op mnemonic */
+        const char *scan = p;           /* where to scan for the size keyword */
+        const char *rep = "";           /* optional REP/REPE/REPNE prefix + ' ' */
+        char opbuf[16], repbuf[16];
         int si2;
+        if (!nasm_stricmp(w1, "rep")   || !nasm_stricmp(w1, "repe") ||
+            !nasm_stricmp(w1, "repz")  || !nasm_stricmp(w1, "repne") ||
+            !nasm_stricmp(w1, "repnz")) {
+            const char *q = p;
+            if (masm_word(&q, opbuf, sizeof opbuf)) {
+                snprintf(repbuf, sizeof repbuf, "%s ", w1);
+                rep = repbuf;
+                opw = opbuf;
+                scan = q;               /* rest after the op word */
+            }
+        }
         for (si2 = 0; sops[si2]; si2++)
-            if (!nasm_stricmp(w1, sops[si2]))
+            if (!nasm_stricmp(opw, sops[si2]))
                 break;
         if (sops[si2]) {
             char sfx = 0;
-            const char *r = p;
+            const char *r = scan;
             while (*r && !sfx) {
                 while (*r == ' ' || *r == '\t' || *r == ',')
                     r++;
@@ -2580,7 +2596,7 @@ static char *masm_pp_xform(char *line)
                 }
             }
             if (sfx) {
-                snprintf(tmp, sizeof tmp, "%s%c", w1, sfx);
+                snprintf(tmp, sizeof tmp, "%s%s%c", rep, opw, sfx);
                 nasm_free(line);
                 return nasm_strdup(tmp);
             }
