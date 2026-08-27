@@ -331,7 +331,17 @@ static int stdscan_token(struct tokenval *tv)
              * cannot mis-tokenise a genuine register.)
              */
             if (masm_mode && token_type == TOKEN_REG &&
-                is_reg_class(REG64, tv->t_integer)) {
+                (is_reg_class(REG64, tv->t_integer) ||
+                 /*
+                  * dr8..dr31 / cr9..cr31 are NASM register names but not real
+                  * 16/32-bit registers (only dr0-7, cr0-4/cr8 exist), so real
+                  * MASM code uses e.g. `dr20' as an ordinary label (`jz dr20').
+                  * The register enum is alphabetical, so test the numeric value.
+                  */
+                 (is_reg_class(REG_DREG, tv->t_integer) &&
+                  nasm_regvals[tv->t_integer] >= 8) ||
+                 (is_reg_class(REG_CREG, tv->t_integer) &&
+                  nasm_regvals[tv->t_integer] > 8))) {
                 tv->t_type = TOKEN_ID;
                 return TOKEN_ID;
             }
