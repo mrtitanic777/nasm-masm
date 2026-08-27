@@ -2186,6 +2186,106 @@ static char *masm_reorder_segsize(const char *line)
     return out;
 }
 
+/*
+ * Some MASM sources parenthesise a whole operand value as a grouping habit
+ * (`lds si, ( lpSource )', `mov ax, word ptr ( lpSource + 2 )').  When the
+ * operand is a memory reference -- e.g. a cmacros param that expands to
+ * `[bp+N]' -- NASM rejects the parentheses ("expression syntax error").  MASM
+ * treats them as pure grouping, so strip a `( ... )' that spans an ENTIRE
+ * operand value: the `(' sits at an operand-value start (right after the
+ * mnemonic, a top-level `,', a `:' segment override, or a `ptr' size cast) and
+ * its matching `)' ends the operand (next non-space is `,', `;', or EOL).
+ * Parentheses that are a sub-expression (preceded by an operator, or not
+ * closing the operand) are left untouched, so scalar precedence is preserved.
+ */
+static char *masm_strip_operand_parens(char *line)
+{
+    char *s = line;
+    int bdepth = 0;                     /* `[' nesting */
+    bool opstart;                       /* at an operand-value start position */
+
+    /* Skip a leading label and the mnemonic: only operands are rewritten. */
+    while (*s == ' ' || *s == '\t')
+        s++;
+    {
+        /* An optional label (a word ending in `:') precedes the mnemonic. */
+        char *save = s;
+        while (*s && *s != ' ' && *s != '\t' && *s != ';')
+            s++;
+        if (s > save && s[-1] == ':') {         /* it was a label -- skip the */
+            while (*s == ' ' || *s == '\t')     /* whitespace and the mnemonic */
+                s++;
+            while (*s && *s != ' ' && *s != '\t' && *s != ';')
+                s++;
+        }
+    }
+    opstart = true;                     /* first operand begins after the gap */
+
+    for (; *s; s++) {
+        if (*s == ';')
+            break;                      /* comment */
+        if (*s == '\'' || *s == '"') {  /* skip a string literal */
+            char q = *s++;
+            while (*s && *s != q)
+                s++;
+            if (!*s)
+                break;
+            opstart = false;
+            continue;
+        }
+        if (*s == '[') { bdepth++; opstart = false; continue; }
+        if (*s == ']') { if (bdepth) bdepth--; opstart = false; continue; }
+        if (*s == ',' && bdepth == 0) { opstart = true; continue; }
+        if (*s == ' ' || *s == '\t')
+            continue;                   /* whitespace does not end opstart */
+        if (*s == ':' && bdepth == 0) { opstart = true; continue; }  /* seg: */
+
+        if (*s == '(' && bdepth == 0) {
+            bool cand = opstart;
+            /* Also a candidate right after a `ptr' size-cast keyword. */
+            if (!cand) {
+                const char *b = s;
+                while (b > line && (b[-1] == ' ' || b[-1] == '\t'))
+                    b--;
+                if (b - line >= 3 && !nasm_strnicmp(b - 3, "ptr", 3) &&
+                    (b - line == 3 || !nasm_isidchar((unsigned char)b[-4])))
+                    cand = true;
+            }
+            if (cand) {
+                /* find the matching `)' at this paren depth */
+                int pd = 1;
+                char *e = s + 1;
+                for (; *e && *e != ';'; e++) {
+                    if (*e == '(') pd++;
+                    else if (*e == ')') { if (--pd == 0) break; }
+                    else if (*e == '\'' || *e == '"') {
+                        char q = *e++;
+                        while (*e && *e != q) e++;
+                        if (!*e) break;
+                    }
+                }
+                if (pd == 0 && *e == ')') {
+                    const char *n = e + 1;
+                    while (*n == ' ' || *n == '\t')
+                        n++;
+                    if (*n == '\0' || *n == ',' || *n == ';') {
+                        /* strip: overwrite `(' and `)' by removing them */
+                        memmove(e, e + 1, strlen(e + 1) + 1);  /* drop `)' */
+                        memmove(s, s + 1, strlen(s + 1) + 1);  /* drop `(' */
+                        s--;            /* re-scan from the removed `(' spot */
+                        opstart = true; /* value still starts here */
+                        continue;
+                    }
+                }
+            }
+            opstart = false;
+            continue;
+        }
+        opstart = false;
+    }
+    return line;
+}
+
 static char *masm_rewrite_line(char *line)
 {
     const char *p;
@@ -2194,6 +2294,7 @@ static char *masm_rewrite_line(char *line)
     bool changed = false;
     int depth = 0;                      /* `[' nesting, for var.field rewrites */
 
+    line = masm_strip_operand_parens(line);
     if ((reord = masm_reorder_segsize(line)) != NULL) {
         nasm_free(line);
         line = reord;
