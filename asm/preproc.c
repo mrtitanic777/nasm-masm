@@ -1901,13 +1901,74 @@ static const char *masm_type_to_res(const char *t)
  * a preprocessor symbol.)
  * Returns line unchanged, or a freshly allocated rewritten line (line freed).
  */
-static char *masm_rewrite_line(char *line)
+/* True if `s' (length 2) is a segment register name. */
+static bool masm_is_segreg2(const char *s)
+{
+    static const char *const sr[] = { "es","cs","ss","ds","fs","gs", NULL };
+    int i;
+    for (i = 0; sr[i]; i++)
+        if (!nasm_strnicmp(s, sr[i], 2))
+            return true;
+    return false;
+}
+
+/*
+ * MASM writes a segment override BEFORE the size cast (`es:byte ptr [bx]'),
+ * but NASM wants the size first (`byte es:[bx]').  Reorder `<seg>:<size> ptr'
+ * to `<size> ptr <seg>:' at the text level.  Returns a new string if anything
+ * moved, else NULL.  Skips quoted text and comments.
+ */
+static char *masm_reorder_segsize(const char *line)
 {
     const char *p = line;
-    char *out, *o;
+    char *out = nasm_malloc(strlen(line) + 16), *o = out;
+    bool changed = false;
+    char qc = 0;
+    while (*p) {
+        if (qc) { if (*p == qc) qc = 0; *o++ = *p++; continue; }
+        if (*p == '\'' || *p == '"') { qc = *p; *o++ = *p++; continue; }
+        if (*p == ';') { strcpy(o, p); o += strlen(o); break; }
+        if ((p == line || !nasm_isidchar(p[-1])) &&
+            masm_is_segreg2(p) && !nasm_isidchar(p[2]) && p[2] == ':') {
+            const char *q = p + 3;                  /* after `<seg>:' */
+            char sz[16]; size_t sn = 0;
+            const char *r;
+            while (*q == ' ' || *q == '\t') q++;
+            r = q;
+            while (nasm_isidchar(*r) && sn + 1 < sizeof sz) sz[sn++] = *r++;
+            sz[sn] = '\0';
+            if (sn && masm_type_bytes(sz) > 0) {     /* a size keyword follows */
+                const char *t = r;
+                while (*t == ' ' || *t == '\t') t++;
+                if (!nasm_strnicmp(t, "ptr", 3) && !nasm_isidchar(t[3])) {
+                    /* emit `<size> ptr <seg>:' */
+                    o += sprintf(o, "%s ptr %c%c:", sz, p[0], p[1]);
+                    p = t + 3;
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+        *o++ = *p++;
+    }
+    *o = '\0';
+    if (!changed) { nasm_free(out); return NULL; }
+    return out;
+}
+
+static char *masm_rewrite_line(char *line)
+{
+    const char *p;
+    char *out, *o, *reord;
     size_t cap;
     bool changed = false;
     int depth = 0;                      /* `[' nesting, for var.field rewrites */
+
+    if ((reord = masm_reorder_segsize(line)) != NULL) {
+        nasm_free(line);
+        line = reord;
+    }
+    p = line;
 
     cap = strlen(line) * 4 + 128;       /* operator wraps can expand the line */
     out = nasm_malloc(cap);
