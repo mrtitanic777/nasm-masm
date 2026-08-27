@@ -2526,6 +2526,23 @@ static char *masm_rewrite_line(char *line)
                     } else {
                         full[0] = '\0';
                     }
+                    /*
+                     * `TYPE.member' in an expression (not `[reg].TYPE.member',
+                     * which the `].' handler qualifies): MASM 5.x struct fields
+                     * are GLOBAL offset constants, so `TYPE.member' is the
+                     * member's offset regardless of TYPE -- even a member
+                     * declared in a different struct (`.ERRNZ AP_SIG_HEXE.ms_cb'
+                     * where ms_cb lives in another struct).  Drop the TYPE prefix
+                     * to the bare (global) member, but only OUTSIDE brackets so a
+                     * type-qualified memory offset is untouched.
+                     */
+                    if (depth == 0 && masm_sdef_find(base) &&
+                        masm_is_field(f1) && masm_type_query(full) == 0) {
+                        o += sprintf(o, "%.*s", (int)(wl - dp - 1), p + dp + 1);
+                        p += wl;
+                        changed = true;
+                        continue;
+                    }
                     /* A register base inside `[]' may take a bare NUMERIC `.'
                      * displacement (`[bp.6]' -> `[bp + 6]'), a named EQU/= constant
                      * (`[bx.nfd]' where `nfd = a-b') or a struct member -- MASM
