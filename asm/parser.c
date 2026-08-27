@@ -1050,6 +1050,17 @@ restart_parse:
         bool mib;               /* compound (mib) mref? */
         int setsize = 0;
         decoflags_t brace_flags = 0;    /* flags for decorators in braces */
+        /*
+         * A far-pointer load (LDS/LES/LFS/LGS/LSS) sizes its memory operand by
+         * the destination register, not by an explicit `dword ptr'/`fword ptr'
+         * cast: MASM writes `les bx, dword ptr [m]', which NASM rejects as an
+         * operand-size mismatch.  Under --masm, swallow such a size on these
+         * opcodes so the load is left unsized (see also the bare-label case).
+         */
+        bool masm_farload = masm_mode &&
+            (result->opcode == I_LDS || result->opcode == I_LES ||
+             result->opcode == I_LFS || result->opcode == I_LGS ||
+             result->opcode == I_LSS);
 
         i = stdscan(NULL, &tokval);
         if (first && i == ':') {
@@ -1108,7 +1119,7 @@ restart_parse:
                 break;
             case S_DWORD:
             case S_LONG:
-                if (!setsize)
+                if (!setsize && !masm_farload)
                     op->type |= BITS32;
                 setsize = 1;
                 break;

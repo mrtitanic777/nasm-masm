@@ -2505,14 +2505,16 @@ static char *masm_rewrite_line(char *line)
                         full[0] = '\0';
                     }
                     /* A register base inside `[]' may take a bare NUMERIC `.'
-                     * displacement (`[bp.6]' -> `[bp + 6]') as well as a named
-                     * struct member -- MASM uses `.' for both. */
+                     * displacement (`[bp.6]' -> `[bp + 6]'), a named EQU/= constant
+                     * (`[bx.nfd]' where `nfd = a-b') or a struct member -- MASM
+                     * uses `.' for all of them. */
                     bool reg_in_br = depth > 0 && masm_is_gpreg(base);
                     bool numfield = f1[0] && f1[strspn(f1, "0123456789")] == '\0';
+                    bool constfield = reg_in_br && masm_nameset_has(masm_const_tab, f1);
                     if (((masm_is_field(f1) &&
                           (masm_type_query(base) > 0 || masm_lbuf_has(base) ||
                            reg_in_br)) ||
-                         (numfield && reg_in_br)) &&
+                         ((numfield || constfield) && reg_in_br)) &&
                         !masm_sdef_find(base) &&
                         masm_type_query(full) == 0) {
                         /*
