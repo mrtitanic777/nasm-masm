@@ -503,6 +503,7 @@ extern struct strlist *depend_list;
 /* TASM mode changes some properties */
 extern bool tasm_compatible_mode;
 extern bool masm_mode;          /* --masm: MASM 6.x source compatibility */
+extern bool masm_if_undef_zero; /* --masm: undefined symbol in %if -> 0 */
 
 /*
  * Register the MASM data-type (element size in bytes) of a label, so a bare

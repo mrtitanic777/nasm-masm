@@ -60,6 +60,7 @@ static bool keep_all;
 
 bool tasm_compatible_mode = false;
 bool masm_mode = false;         /* --masm: MASM 6.x source compatibility */
+bool masm_if_undef_zero = false; /* --masm: undefined symbol in %if -> 0 */
 enum pass_type _pass_type;
 const char * const _pass_types[] =
 {

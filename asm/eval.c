@@ -942,6 +942,14 @@ static expr *expr6(void)
             } else {
                 enum label_type ltype;
                 ltype = lookup_label(tokval->t_charptr, &label_seg, &label_ofs);
+                if (ltype == LBL_none && masm_if_undef_zero) {
+                    /*
+                     * MASM (--masm): an undefined symbol in a conditional-
+                     * assembly expression (`IF SDEBUG') evaluates to 0.
+                     */
+                    addtotemp(EXPR_SIMPLE, 0);
+                    break;
+                }
                 if (ltype == LBL_none) {
                     scope = local_scope(tokval->t_charptr);
                     if (critical) {

@@ -6549,7 +6549,9 @@ iftype:
         pps.tptr = tline = expand_smacro(tline);
 	pps.ntokens = -1;
         tokval.t_type = TOKEN_INVALID;
+        masm_if_undef_zero = masm_mode;  /* MASM: undefined symbol in IF -> 0 */
         evalresult = evaluate(ppscan, &pps, &tokval, NULL, true, NULL);
+        masm_if_undef_zero = false;
         if (!evalresult)
             return -1;
         if (tokval.t_type) {
