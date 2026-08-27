@@ -2517,6 +2517,32 @@ static char *masm_pp_xform(char *line)
     size_t l1, l2;
 
     /*
+     * A C-preprocessor-style conditional (`#ifdef WOW', `#endif') -- some MASM
+     * sources (and the Win3.1 reconstruction) prefix the IF-family with `#'.
+     * NASM reads a leading `#' as a line-number directive, so strip it and let
+     * the bare MASM conditional handling below translate the rest.  Only the
+     * IF-family is unwrapped; any other `#...' is left for NASM.
+     */
+    {
+        const char *h = line;
+        while (*h == ' ' || *h == '\t')
+            h++;
+        if (*h == '#' && nasm_isidstart(h[1])) {
+            char cw[32];
+            size_t cn = 0;
+            const char *c = h + 1;
+            while (nasm_isidchar(*c) && cn + 1 < sizeof cw)
+                cw[cn++] = *c++;
+            cw[cn] = '\0';
+            if (masm_is_cond(cw)) {
+                char *nl = nasm_strdup(h + 1);   /* drop the `#' */
+                nasm_free(line);
+                return masm_pp_xform(nl);
+            }
+        }
+    }
+
+    /*
      * A macro that GENERATES a macro: `NAME &macro [p,...]' opens the inner
      * macro and `&endm' closes it (MASM marks them with `&' to keep them
      * distinct from the outer's own delimiters).  Translate to %macro/%endmacro
