@@ -409,22 +409,33 @@ __cp_nt:
 %endmacro
 
 ;; cBegin -- prologue.  cEnd -- epilogue (retf for FAR, ret for NEAR).
+;; `cBegin nogen' / `cEnd nogen' suppress the standard frame: the body sets up
+;; no BP frame and returns on its own (often by jumping to shared exit code), so
+;; emitting push bp/mov bp,sp or pop bp/ret here would be wrong bytes -- and,
+;; accumulated across a run of nogen procs, would push `short' jumps out of
+;; range (3ginterf).  Honor it.
 %imacro cBegin 0-1
-    push bp
-    mov bp, sp
-    %if __cp_localo > 0
-        sub sp, __cp_localo
+    %ifidni %1, nogen
+    %else
+        push bp
+        mov bp, sp
+        %if __cp_localo > 0
+            sub sp, __cp_localo
+        %endif
     %endif
 %endmacro
 %imacro cEnd 0-1
-    %if __cp_localo > 0
-        mov sp, bp
-    %endif
-    pop bp
-    %if __cp_far
-        retf
+    %ifidni %1, nogen
     %else
-        ret
+        %if __cp_localo > 0
+            mov sp, bp
+        %endif
+        pop bp
+        %if __cp_far
+            retf
+        %else
+            ret
+        %endif
     %endif
 %endmacro
 
