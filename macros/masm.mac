@@ -32,6 +32,21 @@ USE: masm
 %define REAL8_size  8
 %define REAL10_size 10
 
+;; MASM programs legitimately define constants whose names collide with NASM
+;; directive keywords (e.g. windows.inc's `WARNING = 0').  Under --masm's
+;; case-insensitive symbol matching such a constant shadows the `warning'
+;; directive that the stock `endstruc' (standard.mac) uses to silence the
+;; section-restore -- turning `[warning push]' into `[0 push]', which errors on
+;; every STRUCT close.  Override `endstruc' to restore the section directly,
+;; without naming `warning'.  (`struc' is unchanged: it opens the STRUCT with
+;; `[absolute N]' and pushes the %$strucname context this still pops.)
+%unimacro endstruc 0.nolist
+%imacro endstruc 0.nolist
+        %{$strucname}_size equ ($-%$strucname)
+    %pop
+    __?SECT?__
+%endmacro
+
 ;; Intended code bitness from the CPU/.model directives.  NASM's own __?BITS?__
 ;; is transient -- a STRUCT (NASM `struc'/`endstruc') resets it to 16 -- so the
 ;; simplified-segment USE attribute must come from this struc-safe copy instead.
