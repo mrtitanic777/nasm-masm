@@ -4837,6 +4837,31 @@ static char *masm_pp_xform(char *line)
              */
             char ex[512], *xr;
             bool numeq = false;
+            /*
+             * NAME EQU <size> ptr  -- a bare size-cast keyword alias (`wptr EQU
+             * word ptr', `bptr EQU byte ptr'), used to abbreviate casts at the
+             * use site (`mov wptr [buf], 3').  masm_skip_typeptr strips the whole
+             * value, leaving nothing for NASM's `equ'; bind it textually instead.
+             */
+            {
+                const char *sk = masm_skip_typeptr(v);
+                if (sk != v && (*sk == '\0' || *sk == ';')) {
+                    const char *e = v;
+                    size_t n;
+                    while (*e && *e != ';')
+                        e++;
+                    while (e > v && (e[-1] == ' ' || e[-1] == '\t'))
+                        e--;
+                    n = (size_t)(e - v);
+                    if (n && n < sizeof tmp - 64) {
+                        snprintf(tmp, sizeof tmp, "%%idefine %s %.*s",
+                                 w1, (int)n, v);
+                        nasm_free(line);
+                        masm_ppq_add(nasm_strdup(tmp));
+                        return masm_ppq_get();
+                    }
+                }
+            }
             masm_xlat_ops(ex, sizeof ex, masm_skip_typeptr(v));
             xr = ex;
             while (*xr == ' ' || *xr == '\t')
