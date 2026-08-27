@@ -2892,6 +2892,15 @@ static char *masm_rewrite_anon(const char *line)
     bool changed = false;
     char qc = 0;
 
+    /*
+     * In a dead %if/%ifdef branch NASM discards this line, so do NOT number its
+     * `@@:'/`@F'/`@B': a `@@:' inside a skipped block would still consume the
+     * counter, and a live `@F'/`@B' would then reference an anonymous label that
+     * is never emitted.  MASM's `@F'/`@B' skip conditionally-excluded `@@'.
+     */
+    if (istk && istk->conds && !emitting(istk->conds->state))
+        return NULL;
+
     out = nasm_malloc(strlen(line) * 2 + 64);
     o = out;
     while (*p) {
