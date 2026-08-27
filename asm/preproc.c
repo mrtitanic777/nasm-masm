@@ -1992,6 +1992,25 @@ static char *masm_rewrite_line(char *line)
             changed = true;
             continue;
         }
+        /*
+         * Redundant parentheses around a lone identifier: `word ptr (mflags)'.
+         * MASM uses `(...)' for grouping, but NASM rejects `(mem)' when the
+         * identifier is a memory alias -- and the parens carry no meaning here.
+         * Strip `(IDENT)' -> `IDENT' (only a single identifier, not an
+         * expression, and not a call-like `name(...)').
+         */
+        if (*p == '(' && (p == line || !nasm_isidchar(p[-1])) &&
+            nasm_isidstart(p[1])) {
+            const char *q = p + 1;
+            while (nasm_isidchar(*q))
+                q++;
+            if (*q == ')') {
+                o += sprintf(o, "%.*s", (int)(q - (p + 1)), p + 1);
+                p = q + 1;
+                changed = true;
+                continue;
+            }
+        }
         /* `].member.chain'  ->  ` + member.chain]' */
         if (*p == ']' && p[1] == '.') {
             const char *q = p + 2;
