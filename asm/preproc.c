@@ -2752,6 +2752,44 @@ static char *masm_pp_xform(char *line)
         return line;
 
     /*
+     * A label prefixing a MASM string instruction (`foint: lods byte ptr
+     * es:[si]'): the string-op rewrite below keys on the FIRST word, which
+     * here is the label, so the `lods' would be missed.  When a `name:' label
+     * is followed by a bare string op (optionally REP-prefixed), split the
+     * label off, translate the remainder, and re-emit the label ahead of it.
+     * (Narrow on purpose -- a plain `name: mov ..' needs no split; NASM
+     * handles it directly.)
+     */
+    if (*p == ':' && p[1] != ':' && w1[0] != '.' && !masm_is_streg(w1)) {
+        const char *rest = p + 1;
+        char rw[16];
+        while (*rest == ' ' || *rest == '\t')
+            rest++;
+        { const char *q = rest; masm_word(&q, rw, sizeof rw); }
+        if (!nasm_stricmp(rw, "lods") || !nasm_stricmp(rw, "stos") ||
+            !nasm_stricmp(rw, "movs") || !nasm_stricmp(rw, "scas") ||
+            !nasm_stricmp(rw, "cmps") || !nasm_stricmp(rw, "ins")  ||
+            !nasm_stricmp(rw, "outs") || !nasm_stricmp(rw, "rep")  ||
+            !nasm_stricmp(rw, "repe") || !nasm_stricmp(rw, "repz") ||
+            !nasm_stricmp(rw, "repne")|| !nasm_stricmp(rw, "repnz")) {
+            char lbl[264];
+            char *r, *held[8];
+            int nh = 0, i;
+            snprintf(lbl, sizeof lbl, "%s:", w1);
+            r = masm_pp_xform(nasm_strdup(rest));
+            if (r)
+                held[nh++] = r;
+            while (nh < 7 && (r = masm_ppq_get()) != NULL)
+                held[nh++] = r;
+            masm_ppq_add(nasm_strdup(lbl));
+            for (i = 0; i < nh; i++)
+                masm_ppq_add(held[i]);
+            nasm_free(line);
+            return masm_ppq_get();
+        }
+    }
+
+    /*
      * `localV name, size' declares a stack BUFFER local (a struct instance).
      * Record the name so its `.member' access is rewritten (see masm_lbufs);
      * the line itself still flows on to the shim's `localV' macro unchanged.
