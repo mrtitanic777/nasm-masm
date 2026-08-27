@@ -2787,6 +2787,42 @@ static char *masm_pp_xform(char *line)
     }
 
     /*
+     * `cCall <far ptr NAME>, <args>' -- a cCall whose TARGET is a `<...>'-
+     * wrapped far/near pointer.  The shim's cCall binds the target from its
+     * first argument and does `call <target>', so the `<>' wrapper and the
+     * `ptr' keyword must be removed first: rewrite to `cCall far NAME, <args>'
+     * (the `far'/`near' keyword stays, so `call __cc_fn' becomes `call far
+     * NAME' -- a far call to the external proc).
+     */
+    if (!nasm_stricmp(w1, "ccall")) {
+        const char *s = p;
+        while (*s == ' ' || *s == '\t')
+            s++;
+        if (*s == '<') {
+            const char *e = strchr(s, '>');
+            if (e && e > s + 1) {
+                char tgt[256];
+                size_t tn = 0;
+                const char *t = s + 1;
+                while (t < e && tn + 1 < sizeof tgt) {
+                    if ((t == s + 1 || !nasm_isidchar(t[-1])) &&
+                        !nasm_strnicmp(t, "ptr", 3) && !nasm_isidchar(t[3])) {
+                        t += 3;                 /* drop a standalone `ptr' */
+                        while (*t == ' ' || *t == '\t')
+                            t++;
+                        continue;
+                    }
+                    tgt[tn++] = *t++;
+                }
+                tgt[tn] = '\0';
+                snprintf(tmp, sizeof tmp, "cCall %s%s", tgt, e + 1);
+                nasm_free(line);
+                return masm_rewrite_line(nasm_strdup(tmp));
+            }
+        }
+    }
+
+    /*
      * Scalar param/local declarations carry their size in the mnemonic suffix
      * (parmB/localB = 1, parmW/localW = 2, parmD/localD = 4); record name->size
      * so MOVZX/MOVSX can size a bare source that names one (see masm_lszs).
