@@ -235,11 +235,11 @@
 ;; and a size prefix would break `les').  Locals are used WITH brackets in the
 ;; source (`mov [v],cl'), so bind them to the bare offset bp-off.
 %imacro parmB 1
-    %xdefine %1 [bp + __cp_parmo]
+    %ixdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 2
 %endmacro
 %imacro parmW 1
-    %xdefine %1 [bp + __cp_parmo]
+    %ixdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 2
 %endmacro
 ;; A DWORD parm/local gets the cmacros far-pointer/dword half accessors.
@@ -248,49 +248,49 @@
 ;; `seg_&n equ n[2]') and the member forms <n>.off/.lo (low) and <n>.sel/.hi/
 ;; .seg (high), covering the SEGOFF (off/sel) and HILO (lo/hi) layouts.
 %imacro __cp_dhalves 2
-    %xdefine off_%1 word [bp + (%2)]
-    %xdefine seg_%1 word [bp + (%2) + 2]
-    %xdefine %1.off word [bp + (%2)]
-    %xdefine %1.lo  word [bp + (%2)]
-    %xdefine %1.sel word [bp + (%2) + 2]
-    %xdefine %1.hi  word [bp + (%2) + 2]
-    %xdefine %1.seg word [bp + (%2) + 2]
+    %ixdefine off_%1 word [bp + (%2)]
+    %ixdefine seg_%1 word [bp + (%2) + 2]
+    %ixdefine %1.off word [bp + (%2)]
+    %ixdefine %1.lo  word [bp + (%2)]
+    %ixdefine %1.sel word [bp + (%2) + 2]
+    %ixdefine %1.hi  word [bp + (%2) + 2]
+    %ixdefine %1.seg word [bp + (%2) + 2]
 %endmacro
 %imacro parmD 1
-    %xdefine %1 [bp + __cp_parmo]
+    %ixdefine %1 [bp + __cp_parmo]
     __cp_dhalves %1, __cp_parmo
     %assign __cp_parmo __cp_parmo + 4
 %endmacro
 ;; DP/CP = data/code far pointer (4), Q = qword (8), T = 6-byte far pointer.
 %imacro parmDP 1
-    %xdefine %1 [bp + __cp_parmo]
+    %ixdefine %1 [bp + __cp_parmo]
     __cp_dhalves %1, __cp_parmo
     %assign __cp_parmo __cp_parmo + 4
 %endmacro
 %imacro parmCP 1
-    %xdefine %1 [bp + __cp_parmo]
+    %ixdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 4
 %endmacro
 %imacro parmQ 1
-    %xdefine %1 [bp + __cp_parmo]
+    %ixdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 8
 %endmacro
 %imacro parmT 1
-    %xdefine %1 [bp + __cp_parmo]
+    %ixdefine %1 [bp + __cp_parmo]
     %assign __cp_parmo __cp_parmo + 6
 %endmacro
 
 %imacro localB 1
     %assign __cp_localo __cp_localo + 2
-    %xdefine %1 bp - __cp_localo
+    %ixdefine %1 bp - __cp_localo
 %endmacro
 %imacro localW 1
     %assign __cp_localo __cp_localo + 2
-    %xdefine %1 bp - __cp_localo
+    %ixdefine %1 bp - __cp_localo
 %endmacro
 %imacro localD 1
     %assign __cp_localo __cp_localo + 4
-    %xdefine %1 bp - __cp_localo
+    %ixdefine %1 bp - __cp_localo
     __cp_dhalves %1, -__cp_localo
 %endmacro
 ;; A buffer/pointer local (localV/DP/CP/Q/T) is taken by ADDRESS (`lea bx,buf')
@@ -300,24 +300,24 @@
 ;; localV name,size -- size may be a MASM hex `NNh'.
 %imacro localV 2
     %assign __cp_localo __cp_localo + %2
-    %xdefine %1 [bp - __cp_localo]
+    %ixdefine %1 [bp - __cp_localo]
 %endmacro
 %imacro localDP 1
     %assign __cp_localo __cp_localo + 4
-    %xdefine %1 [bp - __cp_localo]
+    %ixdefine %1 [bp - __cp_localo]
     __cp_dhalves %1, -__cp_localo
 %endmacro
 %imacro localCP 1
     %assign __cp_localo __cp_localo + 4
-    %xdefine %1 [bp - __cp_localo]
+    %ixdefine %1 [bp - __cp_localo]
 %endmacro
 %imacro localQ 1
     %assign __cp_localo __cp_localo + 8
-    %xdefine %1 [bp - __cp_localo]
+    %ixdefine %1 [bp - __cp_localo]
 %endmacro
 %imacro localT 1
     %assign __cp_localo __cp_localo + 6
-    %xdefine %1 [bp - __cp_localo]
+    %ixdefine %1 [bp - __cp_localo]
 %endmacro
 
 ;; cBegin -- prologue.  cEnd -- epilogue (retf for FAR, ret for NEAR).
