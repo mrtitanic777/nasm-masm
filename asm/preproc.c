@@ -1983,7 +1983,15 @@ static char *masm_rewrite_line(char *line)
                         full[0] = '\0';
                     }
                     if (masm_is_field(f1) && !masm_sdef_find(base) &&
+                        masm_type_query(base) > 0 &&
                         masm_type_query(full) == 0) {
+                        /*
+                         * base must be a registered DATA label (extern/DB-DW-DD
+                         * data), so `[base + field]' is a real address.  A local
+                         * /param far pointer is a bound memory operand `[bp-o]',
+                         * not a label -- `[[bp-o] + field]' would be excess
+                         * brackets; those use the seg_/off_ half accessors.
+                         */
                         o += sprintf(o, "[%.*s + %.*s]", (int)dp, p,
                                      (int)(wl - dp - 1), p + dp + 1);
                         p += wl;
