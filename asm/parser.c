@@ -1207,11 +1207,28 @@ restart_parse:
             }
         }
 
-        if (i == '[' || i == TOKEN_MASM_PTR || i == '&') {
+        if (i == '[' || i == '&') {
             /* memory reference */
             mref = true;
             bracket += (i == '[');
             i = stdscan(NULL, &tokval);
+        } else if (i == TOKEN_MASM_PTR) {
+            /*
+             * `<size> PTR <operand>'.  A following `[' or a bare data label is a
+             * (sized) memory reference; but MASM also writes `WORD PTR <const>'
+             * for a sized IMMEDIATE (`mov [m], WORD PTR la_freefixedsize', where
+             * the constant already carries the operation size).  So under --masm
+             * a number or a non-data-label identifier after PTR stays an
+             * immediate (mref false); everything else is memory as before.
+             */
+            i = stdscan(NULL, &tokval);
+            if (masm_mode &&
+                (i == TOKEN_NUM ||
+                 (i == TOKEN_ID && masm_type_get(tokval.t_charptr) == 0))) {
+                /* sized immediate: leave mref false, i holds the constant */
+            } else {
+                mref = true;    /* mref_more handles `[', size overrides, etc. */
+            }
         }
 
     mref_more:
