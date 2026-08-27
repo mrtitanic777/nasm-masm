@@ -2565,8 +2565,13 @@ static char *masm_rewrite_line(char *line)
                             if (half >= 0)
                                 fln = d2 - 1;   /* drop `.half' */
                             if (depth == 0)
-                                o += sprintf(o, "[%.*s + %.*s%s]", (int)dp, p,
-                                             (int)fln, fld, half == 2 ? " + 2" : "");
+                                /* a far-pointer half is a word: size the memref
+                                 * so a `mov ptr.off, OFFSET x' store is a word
+                                 * (not byte) relocation. */
+                                o += sprintf(o, "%s[%.*s + %.*s%s]",
+                                             half >= 0 ? "word " : "",
+                                             (int)dp, p, (int)fln, fld,
+                                             half == 2 ? " + 2" : "");
                             else
                                 o += sprintf(o, "%.*s + %.*s%s", (int)dp, p,
                                              (int)fln, fld, half == 2 ? " + 2" : "");
