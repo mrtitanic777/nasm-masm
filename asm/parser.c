@@ -505,6 +505,16 @@ static int parse_eops(extop **result, bool critical, int elem)
         }
         sign = +1;
 
+        /*
+         * MASM (--masm): `dw OFFSET label' / `dd OFFSET label' -- OFFSET is a
+         * no-op in a data initializer (a bare label is already its address),
+         * so skip a leading OFFSET keyword and let the label parse as the
+         * value.  The regular operand parser handles OFFSET separately.
+         */
+        if (masm_mode && i == TOKEN_ID &&
+            !nasm_stricmp(tokval.t_charptr, "offset"))
+            i = stdscan(NULL, &tokval);
+
         if (i == TOKEN_QMARK) {
             eop->type = EOT_DB_RESERVE;
             skip = true;
