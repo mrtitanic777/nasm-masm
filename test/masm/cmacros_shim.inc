@@ -280,17 +280,21 @@
     %assign __cp_parmo __cp_parmo + 6
 %endmacro
 
+;; Scalar locals (B/W/D) are referenced BARE in MASM source (`mov foo,ax'),
+;; where MASM resolves the name to its stack slot [bp-off].  Bind them to the
+;; bracketed memory operand so the bare reference assembles as memory (the
+;; explicit-bracket form `[foo]' does not occur for scalars in the corpus).
 %imacro localB 1
     %assign __cp_localo __cp_localo + 2
-    %ixdefine %1 bp - __cp_localo
+    %ixdefine %1 [bp - __cp_localo]
 %endmacro
 %imacro localW 1
     %assign __cp_localo __cp_localo + 2
-    %ixdefine %1 bp - __cp_localo
+    %ixdefine %1 [bp - __cp_localo]
 %endmacro
 %imacro localD 1
     %assign __cp_localo __cp_localo + 4
-    %ixdefine %1 bp - __cp_localo
+    %ixdefine %1 [bp - __cp_localo]
     __cp_dhalves %1, -__cp_localo
 %endmacro
 ;; A buffer/pointer local (localV/DP/CP/Q/T) is taken by ADDRESS (`lea bx,buf')
