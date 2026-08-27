@@ -1692,6 +1692,38 @@ static struct masm_sdef *masm_sdef_cur;   /* the one currently being defined  */
 static bool masm_in_struct;
 static char masm_comment_delim;           /* inside a COMMENT block: its delimiter */
 
+/*
+ * Names declared with cmacros `localV name,size' -- a stack BUFFER local, bound
+ * by the shim to a memory operand `[bp-off]' and typically a struct instance
+ * (`localV DscBuf,DSC_LEN').  Unlike a scalar/far-pointer local, such a buffer
+ * takes `.member' access (`DscBuf.dsc_access'), so record the names here to let
+ * the var.field rewrite fire on them (a localV is not a registered DATA label,
+ * so masm_type_query can't distinguish it -- and a blanket relax would clobber
+ * the far-pointer `.sel'/`.off' half accessors, whose suffixes ARE struct field
+ * names in some headers).
+ */
+static struct masm_lbuf { struct masm_lbuf *next; char *name; } *masm_lbufs;
+
+static bool masm_lbuf_has(const char *name)
+{
+    struct masm_lbuf *b;
+    for (b = masm_lbufs; b; b = b->next)
+        if (!nasm_stricmp(b->name, name))
+            return true;
+    return false;
+}
+
+static void masm_lbuf_add(const char *name)
+{
+    struct masm_lbuf *b;
+    if (!name || !*name || masm_lbuf_has(name))
+        return;
+    nasm_new(b);
+    b->name = nasm_strdup(name);
+    b->next = masm_lbufs;
+    masm_lbufs = b;
+}
+
 static struct masm_sdef *masm_sdef_find(const char *name)
 {
     struct masm_sdef *s;
@@ -2018,14 +2050,18 @@ static char *masm_rewrite_line(char *line)
                         full[0] = '\0';
                     }
                     if (masm_is_field(f1) && !masm_sdef_find(base) &&
-                        masm_type_query(base) > 0 &&
+                        (masm_type_query(base) > 0 || masm_lbuf_has(base)) &&
                         masm_type_query(full) == 0) {
                         /*
-                         * base must be a registered DATA label (extern/DB-DW-DD
-                         * data), so `[base + field]' is a real address.  A local
-                         * /param far pointer is a bound memory operand `[bp-o]',
-                         * not a label -- `[[bp-o] + field]' would be excess
-                         * brackets; those use the seg_/off_ half accessors.
+                         * base must be either a registered DATA label
+                         * (extern/DB-DW-DD data) or a `localV' stack BUFFER
+                         * (masm_lbufs), so `[base + field]' is a real address --
+                         * for the buffer it expands to `[[bp-o] + field]', which
+                         * the mref parser collapses to `[bp-o + field]'.  A far
+                         * -pointer param/local is neither, so `ptr.sel' keeps
+                         * using its seg_/off_/.sel half accessor (whose suffix
+                         * names ARE struct fields, so they must not be rewritten
+                         * here).
                          */
                         o += sprintf(o, "[%.*s + %.*s]", (int)dp, p,
                                      (int)(wl - dp - 1), p + dp + 1);
@@ -2533,6 +2569,18 @@ static char *masm_pp_xform(char *line)
     l1 = masm_word(&p, w1, sizeof w1);
     if (!l1)
         return line;
+
+    /*
+     * `localV name, size' declares a stack BUFFER local (a struct instance).
+     * Record the name so its `.member' access is rewritten (see masm_lbufs);
+     * the line itself still flows on to the shim's `localV' macro unchanged.
+     */
+    if (!nasm_stricmp(w1, "localv")) {
+        const char *q = p;
+        char nm[128];
+        if (masm_word(&q, nm, sizeof nm))
+            masm_lbuf_add(nm);
+    }
 
     if (!nasm_stricmp(w1, "purge")) {
         /* PURGE removes macro definitions; we simply leave them defined (NASM
