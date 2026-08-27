@@ -3684,23 +3684,44 @@ static char *masm_pp_xform(char *line)
             const char *ares = masm_type_to_res(w1);
             if (ares) {
                 int acount = 1, aesz = masm_type_bytes(w1);
-                const char *ap = p;
+                char *acx = NULL;               /* non-literal DUP count expr */
+                const char *ap = p, *s, *dupp = NULL;
                 while (*ap == ' ' || *ap == '\t')
                     ap++;
-                if (nasm_isdigit(*ap)) {
-                    int n = atoi(ap);
-                    const char *dp = ap;
-                    while (nasm_isdigit(*dp)) dp++;
-                    while (*dp == ' ' || *dp == '\t') dp++;
-                    if (n > 0 && !nasm_strnicmp(dp, "dup", 3)) acount = n;
+                for (s = ap; *s && *s != ';'; s++) {   /* find `DUP', skip comment */
+                    if ((s == ap || !nasm_isidchar((unsigned char)s[-1])) &&
+                        !nasm_strnicmp(s, "dup", 3) &&
+                        !nasm_isidchar((unsigned char)s[3])) {
+                        dupp = s;
+                        break;
+                    }
                 }
-                if (masm_sdef_cur && masm_sdef_cur->is_union &&
+                if (dupp && dupp > ap) {
+                    size_t clen = dupp - ap;
+                    while (clen && (ap[clen-1] == ' ' || ap[clen-1] == '\t'))
+                        clen--;
+                    if (nasm_isdigit((unsigned char)*ap)) {
+                        acount = atoi(ap);
+                    } else if (clen) {
+                        char acbuf[256];
+                        if (clen < sizeof acbuf) {
+                            memcpy(acbuf, ap, clen);
+                            acbuf[clen] = '\0';
+                            acx = masm_rewrite_line(nasm_strdup(acbuf));
+                        }
+                    }
+                }
+                if (masm_sdef_cur && masm_sdef_cur->is_union && !acx &&
                     aesz * acount > masm_sdef_cur->usize)
                     masm_sdef_cur->usize = aesz * acount;
                 if (masm_sdef_cur && masm_sdef_cur->is_union)
                     snprintf(tmp, sizeof tmp, ";");         /* union: no advance */
+                else if (acx)
+                    snprintf(tmp, sizeof tmp, "resb (%d * (%s))", aesz, acx);
                 else
                     snprintf(tmp, sizeof tmp, "resb %d", aesz * acount);
+                if (acx)
+                    nasm_free(acx);
                 nasm_free(line);
                 masm_ppq_add(nasm_strdup(tmp));
                 return masm_ppq_get();
@@ -3709,19 +3730,42 @@ static char *masm_pp_xform(char *line)
         if (mtl) {
             const char *res = masm_type_to_res(mtype);
             int count = 1;
+            char cexpr[256];            /* DUP count expression (if non-literal) */
+            char *cx = NULL;
             int esz = masm_type_bytes(mtype);
             const char *rp = mp;
+            cexpr[0] = '\0';
             while (*rp == ' ' || *rp == '\t')
                 rp++;
-            if (nasm_isdigit(*rp)) {            /* `N DUP(...)' -> count N */
-                int n = atoi(rp);
-                const char *dp = rp;
-                while (nasm_isdigit(*dp))
-                    dp++;
-                while (*dp == ' ' || *dp == '\t')
-                    dp++;
-                if (n > 0 && !nasm_strnicmp(dp, "dup", 3))
-                    count = n;
+            /*
+             * `<count> DUP (...)' reserves <count> elements.  <count> is often a
+             * literal (`8 DUP') but may be any constant expression (`ERESWDS DUP',
+             * `SIZE NEW_SEG DUP') -- capture the whole expression before `DUP' and
+             * hand the operator-translated form to NASM's `res' so the field (and
+             * the struct SIZE) come out right.
+             */
+            {
+                const char *s, *dupp = NULL;
+                for (s = rp; *s && *s != ';'; s++) {   /* stop at a comment */
+                    if ((s == rp || !nasm_isidchar((unsigned char)s[-1])) &&
+                        !nasm_strnicmp(s, "dup", 3) &&
+                        !nasm_isidchar((unsigned char)s[3])) {
+                        dupp = s;
+                        break;
+                    }
+                }
+                if (dupp && dupp > rp) {
+                    size_t clen = dupp - rp;
+                    while (clen && (rp[clen-1] == ' ' || rp[clen-1] == '\t'))
+                        clen--;
+                    if (nasm_isdigit((unsigned char)*rp)) {
+                        count = atoi(rp);       /* literal: keep the int too */
+                    } else if (clen && clen < sizeof cexpr) {
+                        memcpy(cexpr, rp, clen);
+                        cexpr[clen] = '\0';
+                        cx = masm_rewrite_line(nasm_strdup(cexpr));  /* SIZE etc. */
+                    }
+                }
             }
             if (masm_sdef_cur) {                /* record for instance emission */
                 struct masm_smember *mb;
@@ -3741,10 +3785,14 @@ static char *masm_pp_xform(char *line)
                 /* union member: fixed at offset 0 */
                 snprintf(tmp, sizeof tmp, "%%idefine %s.%s 0",
                          masm_sdef_cur->name, w1);
-            } else if (res)
+            } else if (res && cx)   /* expression count: `resX (expr)' */
+                snprintf(tmp, sizeof tmp, ".%s: %s (%s)", w1, res, cx);
+            else if (res)
                 snprintf(tmp, sizeof tmp, ".%s: %s %d", w1, res, count);
             else        /* nested struct type: reserve <type>_size bytes */
                 snprintf(tmp, sizeof tmp, ".%s: resb %s_size", w1, mtype);
+            if (cx)
+                nasm_free(cx);
             masm_ppq_add(nasm_strdup(tmp));
             /*
              * MASM makes each field name a bare offset symbol too (`la_handle'
