@@ -2590,6 +2590,39 @@ static char *masm_pp_xform(char *line)
     }
 
     /*
+     * LAR/LSL read a selector from r/m16; the operand size follows the
+     * destination register, not the selector variable's storage width.  MASM
+     * writes a spurious size cast on the source (`lar eax, dword ptr handle',
+     * `lsl ecx, dword ptr selector'), which NASM rejects as a dword memory
+     * source.  Normalise a leading `<size> [ptr]' on the source operand to
+     * `word' so it goes through the same (working) path as a hand-written
+     * `word ptr' -- then let the usual operand rewrite finish the line.
+     */
+    if (!nasm_stricmp(w1, "lar") || !nasm_stricmp(w1, "lsl")) {
+        const char *c = strchr(p, ',');
+        if (c) {
+            const char *s = c + 1;
+            char szw[16];
+            size_t n = 0;
+            const char *t;
+            while (*s == ' ' || *s == '\t')
+                s++;
+            t = s;
+            while (nasm_isidchar(*t) && n + 1 < sizeof szw)
+                szw[n++] = *t++;
+            szw[n] = '\0';
+            if (n && (!nasm_stricmp(szw, "byte")  || !nasm_stricmp(szw, "word") ||
+                      !nasm_stricmp(szw, "dword") || !nasm_stricmp(szw, "fword") ||
+                      !nasm_stricmp(szw, "qword") || !nasm_stricmp(szw, "tbyte"))) {
+                snprintf(tmp, sizeof tmp, "%s %.*sword%s",
+                         w1, (int)(s - p), p, t);
+                nasm_free(line);
+                return masm_rewrite_line(nasm_strdup(tmp));
+            }
+        }
+    }
+
+    /*
      * A bare MASM string instruction sized by its (documentation) operand:
      * `lods byte ptr es:[si]' -> `lodsb'.  NASM has only the b/w/d/q-suffixed
      * mnemonics, so pick the suffix from a size keyword in the operand and drop
