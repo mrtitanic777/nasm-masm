@@ -2001,6 +2001,31 @@ static char *masm_rewrite_line(char *line)
                 }
             }
 
+            /*
+             * label[idx] on a data variable: `long_ptr[2]' -> `[long_ptr + 2]'
+             * (MASM array / pointer indexing).  Only for a registered data
+             * label whose name has no `.', outside brackets -- the index's own
+             * `]' closes the group.
+             */
+            if (depth == 0 && p[wl] == '[' && wl < 120) {
+                char nm[128];
+                size_t k = 0;
+                bool dotted = false;
+                for (k = 0; k < wl; k++)
+                    if (p[k] == '.') { dotted = true; break; }
+                if (!dotted) {
+                    memcpy(nm, p, wl);
+                    nm[wl] = '\0';
+                    if (masm_type_query(nm) > 0) {
+                        o += sprintf(o, "[%.*s + ", (int)wl, p);
+                        p += wl + 1;        /* past label and `[' */
+                        depth++;            /* the index's `]' closes it */
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
+
             /* not an operator: copy the whole identifier verbatim */
             memcpy(o, p, wl);
             o += wl;
