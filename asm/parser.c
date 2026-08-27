@@ -1675,6 +1675,26 @@ restart_parse:
         result->prefixes[PPS_OSIZE] = P_O16;
     }
 
+    /*
+     * MASM sizes a `mov [mem], OFFSET x' store of a relocatable address by the
+     * segment's word size; NASM leaves the memory operand unsized, defaulting
+     * the fixup to a byte relocation the obj backend rejects.  Under --masm,
+     * size an unsized memory operand to word (16-bit) / dword (32-bit) when the
+     * other operand is a relocatable immediate (a symbol address, segment set).
+     */
+    if (masm_mode && result->operands == 2) {
+        operand *mem = NULL, *imm = NULL;
+        int k;
+        for (k = 0; k < 2; k++) {
+            if (is_class(MEMORY, result->oprs[k].type))
+                mem = &result->oprs[k];
+            else if (is_class(IMMEDIATE, result->oprs[k].type))
+                imm = &result->oprs[k];
+        }
+        if (mem && imm && !(mem->type & SIZE_MASK) && imm->segment != NO_SEG)
+            mem->type |= (bits >= 32) ? BITS32 : BITS16;
+    }
+
     return result;
 
 fail:
