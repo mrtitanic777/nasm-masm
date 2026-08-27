@@ -4049,6 +4049,25 @@ static char *masm_pp_xform(char *line)
          * one-time setup) is always taken and IF2 is never taken. */
         else if (!nasm_stricmp(w1, "if1"))    { dir = "%if"; rest = "1"; }
         else if (!nasm_stricmp(w1, "if2"))    { dir = "%if"; rest = "0"; }
+        /*
+         * MASM `IFDEF X' is true for ANY defined symbol, including a numeric
+         * EQU/= constant -- which we emit as an assembly `equ' that NASM's
+         * %ifdef (smacros only) does not see.  If the operand is a backward-
+         * defined EQU/= constant, decide the branch directly (`IFDEF' taken,
+         * `IFNDEF' not).  Otherwise fall through to %ifdef/%ifndef for macros.
+         */
+        if (!nasm_stricmp(w1, "ifdef") || !nasm_stricmp(w1, "ifndef")) {
+            char id[128];
+            size_t n = 0;
+            const char *s = rest;
+            while (nasm_isidchar((unsigned char)*s) && n < sizeof id - 1)
+                id[n++] = *s++;
+            id[n] = '\0';
+            if (n && masm_nameset_has(masm_defined_tab, id)) {
+                rest = !nasm_stricmp(w1, "ifdef") ? "1" : "0";
+                dir = "%if";
+            }
+        }
         if (dir) {
             if (!nasm_stricmp(dir, "%if") || !nasm_stricmp(dir, "%elif")) {
                 char ex[512];
