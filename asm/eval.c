@@ -806,6 +806,20 @@ static expr *expr6(void)
         return NULL;
     }
 
+    /*
+     * MASM (--masm): OFFSET is a no-op prefix inside an expression -- a bare
+     * label is already its offset -- so `dw N + OFFSET foo' and `dd OFFSET foo'
+     * work.  The parser strips a leading OFFSET on a whole operand (and gives it
+     * its data-label-vs-address meaning there); handling it here as well lets it
+     * appear mid-expression (kdata's `(N-1)*size S + dataOffset foo', where the
+     * createSeg <seg>OFFSET operator expands to OFFSET).
+     */
+    if (masm_mode && tt == TOKEN_ID && tokval->t_charptr &&
+        !nasm_stricmp(tokval->t_charptr, "offset")) {
+        scan();
+        return expr6();
+    }
+
     switch (tt) {
     case '-':
         scan();
