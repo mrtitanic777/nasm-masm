@@ -1741,6 +1741,49 @@ static int masm_lsz_get(const char *name)
     return 0;
 }
 
+/* True if `w' is exactly an FPU stack register name ST0..ST7. */
+static bool masm_is_streg(const char *w)
+{
+    return (w[0] == 's' || w[0] == 'S') && (w[1] == 't' || w[1] == 'T') &&
+           w[2] >= '0' && w[2] <= '7' && w[3] == '\0';
+}
+
+/*
+ * Copy `src' to `dst', prefixing a `$' before each standalone ST0..ST7 token
+ * (a register name preceded and followed by a non-identifier char).  Used to
+ * escape an FPU-register-named LABEL referenced by a non-FPU instruction
+ * (`jnz st1' -> `jnz $st1'): the `$' forces symbol, not register, parsing.
+ * Returns true if any token was escaped.
+ */
+static bool masm_escape_streg(char *dst, size_t dstsz, const char *src)
+{
+    const char *s = src;
+    char *o = dst;
+    char *end = dst + dstsz - 1;
+    bool any = false;
+    char prev = ' ';
+    while (*s && o < end) {
+        if ((prev == '\0' || !nasm_isidchar(prev)) && prev != '$' &&
+            (s[0] == 's' || s[0] == 'S') && (s[1] == 't' || s[1] == 'T') &&
+            s[2] >= '0' && s[2] <= '7' && !nasm_isidchar(s[3])) {
+            if (o + 4 >= end)
+                break;
+            *o++ = '$';
+            *o++ = s[0];
+            *o++ = s[1];
+            *o++ = s[2];
+            prev = s[2];
+            s += 3;
+            any = true;
+            continue;
+        }
+        prev = *s;
+        *o++ = *s++;
+    }
+    *o = '\0';
+    return any;
+}
+
 static void masm_lsz_add(const char *name, int bytes)
 {
     struct masm_lsz *v;
@@ -2647,6 +2690,29 @@ static char *masm_pp_xform(char *line)
             char nm[128];
             if (masm_word(&q, nm, sizeof nm))
                 masm_lsz_add(nm, bytes);
+        }
+    }
+
+    /*
+     * A label or branch target named like an FPU stack register (`st1:',
+     * `jnz st1').  NASM reserves ST0..ST7 (the disassembly corpus uses them as
+     * real FPU registers, so they cannot be un-reserved like the 64-bit GPR
+     * names are in the tokeniser), so escape the name with `$'.  A `stN' label
+     * DEFINITION (`st1:'), and a standalone `stN' OPERAND of a non-FPU
+     * instruction (FPU mnemonics all begin with `f', and only FPU ops take an
+     * ST register), are both unambiguously the label.
+     */
+    if (masm_is_streg(w1) && *p == ':') {
+        snprintf(tmp, sizeof tmp, "$%s%s", w1, p);
+        nasm_free(line);
+        return masm_rewrite_line(nasm_strdup(tmp));
+    }
+    if (w1[0] != 'f' && w1[0] != 'F' && strchr(p, 's') && strchr(p, 't')) {
+        char esc[1024];
+        if (masm_escape_streg(esc, sizeof esc, p)) {
+            snprintf(tmp, sizeof tmp, "%s %s", w1, esc);
+            nasm_free(line);
+            return masm_rewrite_line(nasm_strdup(tmp));
         }
     }
 

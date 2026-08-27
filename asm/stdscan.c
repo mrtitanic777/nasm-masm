@@ -322,6 +322,20 @@ static int stdscan_token(struct tokenval *tv)
                           tv->t_charptr);
             }
 
+            /*
+             * MASM (--masm): a 64-bit register name (RAX..R15) cannot be a
+             * register in the 16/32-bit source this mode targets, so real MASM
+             * code uses such names as ordinary labels (`rax:', `jz rax').  NASM
+             * reserves them, so return the name as an identifier instead.  (The
+             * 32-bit disassembly corpus never emits a 64-bit register, so this
+             * cannot mis-tokenise a genuine register.)
+             */
+            if (masm_mode && token_type == TOKEN_REG &&
+                is_reg_class(REG64, tv->t_integer)) {
+                tv->t_type = TOKEN_ID;
+                return TOKEN_ID;
+            }
+
             if (likely(!(tv->t_flag & TFLAG_BRC))) {
                 /* most of the tokens fall into this case */
                 return token_type;
