@@ -1724,6 +1724,35 @@ static void masm_lbuf_add(const char *name)
     masm_lbufs = b;
 }
 
+/*
+ * Scalar parameter/local sizes (cmacros parmB/W/D, localB/W/D), keyed by name.
+ * These are shim-bound memory operands with no NASM-visible type, so record the
+ * byte size the declaration implies so MOVZX/MOVSX can size a bare `parm'/
+ * `local' source (`movzx ebx, Selector' where `Selector' is a parmW -> word).
+ */
+static struct masm_lsz { struct masm_lsz *next; char *name; int bytes; } *masm_lszs;
+
+static int masm_lsz_get(const char *name)
+{
+    struct masm_lsz *v;
+    for (v = masm_lszs; v; v = v->next)
+        if (!nasm_stricmp(v->name, name))
+            return v->bytes;
+    return 0;
+}
+
+static void masm_lsz_add(const char *name, int bytes)
+{
+    struct masm_lsz *v;
+    if (!name || !*name || masm_lsz_get(name))
+        return;
+    nasm_new(v);
+    v->name = nasm_strdup(name);
+    v->bytes = bytes;
+    v->next = masm_lszs;
+    masm_lszs = v;
+}
+
 static struct masm_sdef *masm_sdef_find(const char *name)
 {
     struct masm_sdef *s;
@@ -1748,6 +1777,28 @@ static bool masm_is_field(const char *name)
                 return true;
     }
     return false;
+}
+
+/* Element size in bytes of a STRUCT/UNION field named `name' (0 if unknown). */
+static int masm_field_bytes(const char *name)
+{
+    struct masm_sdef *s;
+    struct masm_smember *m;
+    for (s = masm_sdefs; s; s = s->next) {
+        if (s->is_record)
+            continue;
+        for (m = s->head; m; m = m->next)
+            if (m->name && !nasm_stricmp(m->name, name)) {
+                if (!m->dir) return 0;
+                if (!nasm_stricmp(m->dir, "db")) return 1;
+                if (!nasm_stricmp(m->dir, "dw")) return 2;
+                if (!nasm_stricmp(m->dir, "dd")) return 4;
+                if (!nasm_stricmp(m->dir, "dq")) return 8;
+                if (!nasm_stricmp(m->dir, "dt")) return 10;
+                return 0;
+            }
+    }
+    return 0;
 }
 
 /* MASM member type -> NASM data directive (for emitting instance data). */
@@ -2582,6 +2633,23 @@ static char *masm_pp_xform(char *line)
             masm_lbuf_add(nm);
     }
 
+    /*
+     * Scalar param/local declarations carry their size in the mnemonic suffix
+     * (parmB/localB = 1, parmW/localW = 2, parmD/localD = 4); record name->size
+     * so MOVZX/MOVSX can size a bare source that names one (see masm_lszs).
+     */
+    if ((!nasm_strnicmp(w1, "parm", 4) || !nasm_strnicmp(w1, "local", 5)) &&
+        l1 >= 5) {
+        char suf = nasm_tolower(w1[l1 - 1]);
+        int bytes = suf == 'b' ? 1 : suf == 'w' ? 2 : suf == 'd' ? 4 : 0;
+        if (bytes && (l1 == 5 || l1 == 6)) {   /* parmX (5) / localX (6) only */
+            const char *q = p;
+            char nm[128];
+            if (masm_word(&q, nm, sizeof nm))
+                masm_lsz_add(nm, bytes);
+        }
+    }
+
     if (!nasm_stricmp(w1, "purge")) {
         /* PURGE removes macro definitions; we simply leave them defined (NASM
          * permits redefinition), so accept and drop. */
@@ -2618,6 +2686,75 @@ static char *masm_pp_xform(char *line)
                          w1, (int)(s - p), p, t);
                 nasm_free(line);
                 return masm_rewrite_line(nasm_strdup(tmp));
+            }
+        }
+    }
+
+    /*
+     * MOVZX/MOVSX need an explicit source size that NASM cannot infer from a
+     * MASM memory operand.  MASM takes it from the source's declared TYPE (a
+     * struct field's DB/DW, or a typed data label).  Look that type up and
+     * inject `byte'/`word' before the source (`movzx ax, [esi].pga_pglock' ->
+     * `movzx ax, byte [esi].pga_pglock'); leave the line for the operand
+     * rewrite to fold `.field'.  Sources already carrying a size, register
+     * sources, and params/locals of unknown size are left untouched.
+     */
+    if (!nasm_stricmp(w1, "movzx") || !nasm_stricmp(w1, "movsx")) {
+        const char *c = strchr(p, ',');
+        if (c) {
+            const char *s = c + 1;
+            char first[16];
+            size_t fn = 0;
+            const char *u;
+            while (*s == ' ' || *s == '\t')
+                s++;
+            u = s;                              /* first word of the source */
+            while (nasm_isidchar(*u) && fn + 1 < sizeof first)
+                first[fn++] = *u++;
+            first[fn] = '\0';
+            /* proceed unless the source already carries a size keyword */
+            bool sized = fn &&
+                (!nasm_stricmp(first, "byte")  || !nasm_stricmp(first, "word") ||
+                 !nasm_stricmp(first, "dword") || !nasm_stricmp(first, "fword") ||
+                 !nasm_stricmp(first, "qword") || !nasm_stricmp(first, "tbyte"));
+            if (!sized) {
+                /* size-determining id: field after the last `.', else the last
+                 * identifier run in the source (`es:[PDB_block_len]' -> the
+                 * bracketed label; a bare `[esi]' -> the register, size 0). */
+                char id[128];
+                const char *dot = NULL, *q, *idstart = NULL, *idend = NULL;
+                for (q = s; *q && *q != ',' && *q != ';'; q++) {
+                    if (*q == '.')
+                        dot = q;
+                    if (nasm_isidchar(*q)) {
+                        if (!idstart || (q > s && !nasm_isidchar(q[-1])))
+                            idstart = q;
+                        idend = q + 1;
+                    }
+                }
+                if (dot) {
+                    idstart = dot + 1;
+                    idend = idstart;
+                    while (nasm_isidchar(*idend))
+                        idend++;
+                }
+                if (idstart && idend > idstart &&
+                    (size_t)(idend - idstart) < sizeof id) {
+                    int sz;
+                    memcpy(id, idstart, idend - idstart);
+                    id[idend - idstart] = '\0';
+                    sz = masm_field_bytes(id);
+                    if (!sz)
+                        sz = masm_type_query(id);
+                    if (!sz)
+                        sz = masm_lsz_get(id);
+                    if (sz == 1 || sz == 2) {
+                        snprintf(tmp, sizeof tmp, "%s %.*s%s %s", w1,
+                                 (int)(s - p), p, sz == 1 ? "byte" : "word", s);
+                        nasm_free(line);
+                        return masm_rewrite_line(nasm_strdup(tmp));
+                    }
+                }
             }
         }
     }
