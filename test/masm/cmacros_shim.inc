@@ -459,10 +459,45 @@ __cp_nt:
         %if __cc_b >= __cc_a
             %substr __cc_r __cc_s __cc_a,__cc_b-__cc_a+1
             %deftok __cc_t __cc_r
-            push __cc_t
+            ;; A `farPtr'-declared argument (a bare identifier) pushes its two
+            ;; words; any other argument pushes one word.  Only test `%ifdef' on
+            ;; an argument that is a clean identifier -- otherwise the
+            ;; constructed `__isfp_<arg>' is not a legal macro name (`[bp+4]').
+            %assign __cc_id 1
+            %assign __cc_i __cc_a
+            %rep __cc_b - __cc_a + 1
+                %substr __cc_ch __cc_s __cc_i,1
+                %if !((__cc_ch >= 'a' && __cc_ch <= 'z') || \
+                      (__cc_ch >= 'A' && __cc_ch <= 'Z') || \
+                      (__cc_ch >= '0' && __cc_ch <= '9') || \
+                      __cc_ch == '_' || __cc_ch == '@' || \
+                      __cc_ch == '?' || __cc_ch == '$')
+                    %assign __cc_id 0
+                %endif
+                %assign __cc_i __cc_i + 1
+            %endrep
+            %if __cc_id
+                %ifdef __isfp_%[__cc_t]
+                    push __fp1_%[__cc_t]
+                    push __fp2_%[__cc_t]
+                %else
+                    push __cc_t
+                %endif
+            %else
+                push __cc_t
+            %endif
         %endif
     %endrep
     call __cc_fn
+%endmacro
+;; farPtr n,s,o -- declare `n' as a far pointer whose value is the pair (s,o).
+;; MASM generates a push-macro named `n'; here `n' is instead recorded as a
+;; marker (__isfp_n) plus its two words, which cCall expands to `push s / push o'
+;; when `n' appears in its argument list.  (Every kernel use is a cCall arg.)
+%imacro farPtr 3
+    %define  __isfp_%1 1
+    %xdefine __fp1_%1 %2
+    %xdefine __fp2_%1 %3
 %endmacro
 
 ;; regPtr name, seg, off -- a far-pointer register pair.  (Functional subset:
