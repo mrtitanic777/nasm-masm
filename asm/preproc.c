@@ -1847,11 +1847,12 @@ static char *masm_rewrite_line(char *line)
             {
                 const char *sym = NULL;
                 bool unary = false;
+                char shift = 0;                 /* `l' (shl) or `r' (shr) */
                 if      (wl == 3 && !nasm_strnicmp(p, "and", 3)) sym = "&";
                 else if (wl == 2 && !nasm_strnicmp(p, "or",  2)) sym = "|";
                 else if (wl == 3 && !nasm_strnicmp(p, "xor", 3)) sym = "^";
-                else if (wl == 3 && !nasm_strnicmp(p, "shl", 3)) sym = "<<";
-                else if (wl == 3 && !nasm_strnicmp(p, "shr", 3)) sym = ">>";
+                else if (wl == 3 && !nasm_strnicmp(p, "shl", 3)) { sym=""; shift='l'; }
+                else if (wl == 3 && !nasm_strnicmp(p, "shr", 3)) { sym=""; shift='r'; }
                 else if (wl == 3 && !nasm_strnicmp(p, "not", 3)) {
                     sym = "~"; unary = true;
                 }
@@ -1865,6 +1866,7 @@ static char *masm_rewrite_line(char *line)
                         prevsig = b[-1];
                     vend = prevsig == ')' || prevsig == ']' ||
                            prevsig == '_' || prevsig == '?' || prevsig == '$' ||
+                           prevsig == '\'' || prevsig == '"' ||  /* char/str literal */
                            (prevsig >= '0' && prevsig <= '9') ||
                            (prevsig >= 'A' && prevsig <= 'Z') ||
                            (prevsig >= 'a' && prevsig <= 'z');
@@ -1872,6 +1874,39 @@ static char *masm_rewrite_line(char *line)
                         isop = prevsig != 0 && prevsig != ':' && !vend;
                     else
                         isop = vend;
+                    if (isop && shift) {
+                        /*
+                         * MASM SHL/SHR bind ABOVE `+'/`-'; NASM `<<'/`>>' bind
+                         * BELOW.  Emit `X * (1 << Y)' / `X / (1 << Y)' instead
+                         * (X shl Y == X*2^Y, X shr Y == X/2^Y): `*'/`/' have the
+                         * MASM precedence, and the shift amount Y is captured as
+                         * a single factor and parenthesised, so `a shl b + c'
+                         * becomes `a*(1<<b)+c' = `(a shl b)+c', not `a<<(b+c)'.
+                         */
+                        const char *q = p + wl;
+                        o += sprintf(o, " %c (1 << ", shift == 'l' ? '*' : '/');
+                        while (*q == ' ' || *q == '\t')
+                            q++;
+                        while (*q == '+' || *q == '-' || *q == '~')
+                            *o++ = *q++;                /* unary sign */
+                        while (*q == ' ' || *q == '\t')
+                            q++;
+                        if (*q == '(') {                /* balanced group */
+                            int d = 0;
+                            do {
+                                if (*q == '(') d++;
+                                else if (*q == ')') d--;
+                                *o++ = *q++;
+                            } while (*q && d > 0);
+                        } else {                        /* number / char / ident */
+                            while (nasm_isidchar(*q) || *q == '.' || *q == '$')
+                                *o++ = *q++;
+                        }
+                        *o++ = ')';
+                        p = q;
+                        changed = true;
+                        continue;
+                    }
                     if (isop) {
                         o += sprintf(o, "%s", sym);
                         p += wl;
