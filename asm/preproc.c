@@ -4156,14 +4156,15 @@ static char *masm_pp_xform(char *line)
          * defined EQU/= constant, decide the branch directly (`IFDEF' taken,
          * `IFNDEF' not).  Otherwise fall through to %ifdef/%ifndef for macros.
          */
+        char ifid[128];
+        ifid[0] = '\0';
         if (!nasm_stricmp(w1, "ifdef") || !nasm_stricmp(w1, "ifndef")) {
-            char id[128];
             size_t n = 0;
             const char *s = rest;
-            while (nasm_isidchar((unsigned char)*s) && n < sizeof id - 1)
-                id[n++] = *s++;
-            id[n] = '\0';
-            if (n && masm_nameset_has(masm_defined_tab, id)) {
+            while (nasm_isidchar((unsigned char)*s) && n < sizeof ifid - 1)
+                ifid[n++] = *s++;
+            ifid[n] = '\0';
+            if (n && masm_nameset_has(masm_defined_tab, ifid)) {
                 rest = !nasm_stricmp(w1, "ifdef") ? "1" : "0";
                 dir = "%if";
             }
@@ -4178,7 +4179,10 @@ static char *masm_pp_xform(char *line)
                     masm_emit_opt_guards(ex);
                 snprintf(tmp, sizeof tmp, "%s %s", dir, ex);
             } else {
-                snprintf(tmp, sizeof tmp, "%s %s", dir, rest);
+                /* MASM IFDEF/IFNDEF takes a single symbol; ignore any trailing
+                 * text (a reconstructed source may forget the `;' before a
+                 * comment, e.g. `ifndef WOW - too slow').  Emit just the name. */
+                snprintf(tmp, sizeof tmp, "%s %s", dir, ifid);
             }
             nasm_free(line);
             masm_ppq_add(nasm_strdup(tmp));
