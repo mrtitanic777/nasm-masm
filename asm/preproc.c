@@ -4039,6 +4039,63 @@ static char *masm_pp_xform(char *line)
         return masm_ppq_get();
     }
 
+    {
+        /*
+         * A BARE struct instance `STRUCTTYPE <i0, i1, ...>' -- no name on this
+         * line; the label came from a preceding `labelB <..>' / `name:' (kdata:
+         * `labelB <PUBLIC,bootExecBlock>' then `EXECBLOCK <0,0,0,0>').  Emit
+         * just the field data at the current location; `.member' access on the
+         * preceding label resolves through the struct field offsets (var.field).
+         */
+        struct masm_sdef *sd0 = masm_sdef_find(w1);
+        const char *ip0 = p;
+        while (*ip0 == ' ' || *ip0 == '\t')
+            ip0++;
+        if (sd0 && !sd0->is_record && *ip0 == '<') {
+            struct masm_smember *mb;
+            char inits[32][192];
+            int ninit = 0, mi, depth = 0;
+            char *d = inits[0];
+            size_t n = 0;
+            const char *s;
+            ip0++;                              /* past '<' */
+            for (s = ip0; *s; s++) {
+                if (*s == '<') depth++;
+                else if (*s == '>') { if (depth == 0) break; depth--; }
+                if (*s == ',' && depth == 0) {
+                    d[n] = '\0';
+                    if (ninit < 31) { ninit++; d = inits[ninit]; n = 0; }
+                    continue;
+                }
+                if (n + 1 < sizeof inits[0])
+                    d[n++] = *s;
+            }
+            d[n] = '\0';
+            ninit++;
+            for (mb = sd0->head, mi = 0; mb; mb = mb->next, mi++) {
+                char val[192];
+                const char *v = "0";
+                const char *dir = mb->dir ? mb->dir : "dd";
+                if (mi < ninit) {
+                    char *b = inits[mi];
+                    while (*b == ' ' || *b == '\t') b++;
+                    snprintf(val, sizeof val, "%s", b);
+                    { size_t e = strlen(val);
+                      while (e && (val[e-1]==' '||val[e-1]=='\t'||val[e-1]=='\r'))
+                          val[--e] = '\0'; }
+                    if (val[0]) v = val;
+                }
+                if (mb->count > 1)
+                    snprintf(tmp, sizeof tmp, "times %d %s %s", mb->count, dir, v);
+                else
+                    snprintf(tmp, sizeof tmp, "%s %s", dir, v);
+                masm_ppq_add(nasm_strdup(tmp));
+            }
+            nasm_free(line);
+            return masm_ppq_get();
+        }
+    }
+
     if (l2 && masm_sdef_find(w2)) {
         /*
          * `label STRUCTTYPE <i0, i1, ...>' -- a static struct instance.  Emit a
