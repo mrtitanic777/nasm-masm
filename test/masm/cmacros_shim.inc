@@ -23,8 +23,27 @@
     %define __cs_%2 %1
     %idefine %[%2]OFFSET OFFSET
     %ixdefine %[%2]BASE %1
+    ;; Declare the real segment so its NAME is a usable selector value
+    ;; (`cmp dx, _NRESTEXT') even in a module that never sBegins it.  This
+    ;; switches the current section, but createSeg runs at include time before
+    ;; any code, and sBegin sets the section again before a body is emitted.
+    [segment %1]
 %endmacro
-%imacro defGrp 0-*
+;; defGrp group, logicalseg, ...  -- create a real NASM group so the group name
+;; is a usable value (`cmp dx, IGROUP').  Map each logical member to its real
+;; segment (createSeg's __cs_<logical>).
+%imacro defGrp 1-*
+    %xdefine __dg_grp %1
+    %xdefine __dg_secs
+    %rep %0 - 1
+        %rotate 1
+        %ifdef __cs_%1
+            %xdefine __dg_secs __dg_secs %[__cs_%1]
+        %else
+            %xdefine __dg_secs __dg_secs %1
+        %endif
+    %endrep
+    [group __dg_grp __dg_secs]
 %endmacro
 %imacro assumes 0-*
 %endmacro
@@ -227,7 +246,23 @@
     %else
         %assign __cp_parmo 4    ; [bp]=oldbp [bp+2]=ret off
     %endif
-%1:
+    ;; The name may arrive `<...>'-wrapped (cProcVDO passes `cProc <name>,...');
+    ;; strip a leading `<' / trailing `>' before emitting the entry label.
+    %defstr __cp_ns %1
+    %strlen __cp_nn __cp_ns
+    %assign __cp_na 1
+    %assign __cp_nb __cp_nn
+    %substr __cp_nc __cp_ns 1,1
+    %ifidn __cp_nc, '<'
+        %assign __cp_na 2
+    %endif
+    %substr __cp_nc __cp_ns __cp_nn,1
+    %ifidn __cp_nc, '>'
+        %assign __cp_nb __cp_nb - 1
+    %endif
+    %substr __cp_nr __cp_ns __cp_na,__cp_nb-__cp_na+1
+    %deftok __cp_nt __cp_nr
+__cp_nt:
 %endmacro
 
 ;; Parameters are used WITHOUT brackets (`mov ax,p' / `les si,p'), so bind them
