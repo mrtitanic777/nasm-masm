@@ -10,10 +10,20 @@ python run.py                    # check every fixture; exit 1 on any mismatch
 python run.py --objects          # also check -f obj (OMF) and -f win32 (COFF)
 python run.py --update           # regenerate golden/*.hex after an intended change
 python run.py --nasm ../../nasm  # pick the nasm binary (default: ../../nasm[.exe])
+
+python run.py --corpus DIR       # validate an external byte-exact corpus
+python acceptance.py [PROJECT]   # downstream drop-in check (see below)
 ```
 
 `run.py` assembles each `fixtures/*.asm` with `nasm --masm -f bin` and compares
 the emitted bytes to `golden/<name>.hex`.
+
+`acceptance.py` points a real downstream build -- a downstream project's Ring-0 layer
+(`vmm/*.asm`, `vxd/*.asm`, assembled with `nasm -f elf32`) -- at this fork's
+`nasm` and confirms every module still assembles. The asm is NASM-syntax, so it
+runs the stock (non-`--masm`) path: the check proves the fork is a transparent,
+drop-in replacement for the assembler the OS build already depends on. The
+a downstream project Makefile takes it directly via `make ASMC=/path/to/nasm-masm/nasm`.
 
 With `--objects`, each MASM-segment fixture (`directives`, `objseg`) plus the
 relocation-free `hll_struct` is also assembled to `-f obj` (OMF) and `-f win32`
