@@ -142,3 +142,19 @@ python test/masm/run.py --objects  # also check the OMF and COFF object backends
 ```
 
 See [`test/masm/README.md`](test/masm/README.md) for details.
+
+### License & disclaimer
+
+This is a fork of **NASM**, the Netwide Assembler, distributed under the
+[2-clause BSD license](LICENSE); the original NASM code retains its copyright
+("The NASM Authors"). The `--masm` mode is © 2026 Logan Greer, released under the
+same BSD license.
+
+This project is **independent and not affiliated with, sponsored by, or endorsed
+by Microsoft Corporation or the NASM project.** "MASM", "Microsoft Macro
+Assembler", and "Windows" are trademarks of Microsoft Corporation, used here only
+descriptively to indicate source-language compatibility (nominative fair use); no
+Microsoft source code, headers, or binaries are included in this repository.
+"NASM" identifies the upstream project this is derived from. See
+[`NOTICE`](NOTICE) for the full statement. All trademarks belong to their
+respective owners.

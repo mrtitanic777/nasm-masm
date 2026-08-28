@@ -2,7 +2,7 @@
 ; masm_farptr_member.asm -- var.field member access on a far-pointer variable.
 ; A DWORD/far-pointer variable reinterpreted through a struct's fields:
 ; `myPtr.sel' -> `[myPtr + sel]' (sel = SEGOFF.sel offset 2), the high word.
-; Distinct from a struct INSTANCE member (`p POINT<>' defines the label `p.x'):
+; Distinct from a struct INSTANCE member (`p PAIR<>' defines the label `p.x'):
 ; that stays a sized data label.  A type-qualified `SEGOFF.sel' (base is the
 ; struct TYPE) is left alone as the plain offset.
 bits 16

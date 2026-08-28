@@ -1,0 +1,40 @@
+NOTICE
+======
+
+This project is a fork of NASM, the Netwide Assembler (https://www.nasm.us/),
+which is distributed under the 2-clause BSD license (see the LICENSE file). It
+adds a `--masm` mode that assembles Microsoft Macro Assembler (MASM) dialect
+source. Without that flag, the program behaves as unmodified NASM.
+
+Copyright and licensing
+-----------------------
+- All original NASM code remains under its own copyright ("The NASM Authors")
+  and the 2-clause BSD license. Those copyright notices are retained in the
+  source files.
+- The `--masm` additions are Copyright (c) 2026 Logan Greer and are likewise
+  released under the 2-clause BSD license, on the same terms as NASM.
+
+Disclaimer of affiliation
+-------------------------
+This is an independent work. It is NOT affiliated with, sponsored by, endorsed
+by, or otherwise associated with any of the following, and no such affiliation
+or endorsement is claimed or implied:
+
+- Microsoft Corporation. "MASM", "Microsoft Macro Assembler", "Windows", and
+  related product names are trademarks of Microsoft Corporation. They are used
+  in this project only descriptively, to state that the tool is compatible with
+  Microsoft's assembler dialect (nominative fair use) -- comparable to saying
+  software is "compatible with" another product. This project does not use
+  Microsoft's branding and does not claim to be a Microsoft product.
+
+  No Microsoft source code, header files, binaries, object files, or other
+  proprietary material are included in this repository. The compatibility work
+  was developed and tested against Microsoft materials held only locally; none
+  of that material is redistributed here.
+
+- The NASM project and the Netwide Assembler authors. "NASM" is the name of that
+  project; this fork is not endorsed by it. The name is used solely to identify
+  the codebase from which this work is derived, as permitted for a BSD-licensed
+  fork (the BSD license grants rights to the code, not to the project name).
+
+All trademarks are the property of their respective owners.

@@ -5,7 +5,7 @@
 ;   TYPEDEF PTR x / PROTO -> a pointer: dd / 4 (32-bit flat)
 ; Validated byte-identical to ML 6.11 (with TYPEDEF after .MODEL, so a pointer
 ; is the 32-bit 4-byte form):
-;   hnd HANDLE 7          -> data 07000000     (HANDLE = DWORD)
+;   hnd UINT32 7          -> data 07000000     (UINT32 = DWORD)
 ;   flag BFLAG 1          -> data 01           (BFLAG = BYTE)
 ;   mov eax, hnd          -> a1 <hnd>          (dword contents)
 ;   mov bl, flag          -> 8a 1d <flag>      (byte contents)
@@ -14,10 +14,10 @@
 	.386
 	.model flat, stdcall
 PVOID	TYPEDEF	PTR DWORD
-HANDLE	TYPEDEF	DWORD
+UINT32	TYPEDEF	DWORD
 BFLAG	TYPEDEF	BYTE
 	.data
-hnd	HANDLE	7
+hnd	UINT32	7
 flag	BFLAG	1
 	.code
 f	proc
