@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-Acceptance test: this fork's `nasm` is a drop-in for a real downstream build.
+Optional acceptance check: confirm this fork's `nasm` is a drop-in replacement.
 
-a downstream project assembles its Ring-0 layer (vmm/*.asm, vxd/*.asm -- clean-room x86 asm
-transcribed from the byte-exact disassembly corpus) with `nasm -f elf32`.  This
-script points that same build at THIS fork's nasm and confirms every module
-still assembles, proving the `--masm` work never regressed stock NASM behaviour
-(the fork is byte-for-byte stock NASM without the flag).
-
-The asm is NASM-syntax, so it is assembled WITHOUT `--masm` (stock path); the
-point is that the fork is a safe, transparent replacement for the assembler the
-downstream OS build already depends on.
+Point this at a directory from any project that already builds its assembly with
+NASM (a `vmm/` and/or `vxd/` subdirectory of NASM-syntax `.asm` files), and it
+re-assembles every module with THIS binary. Because that source is plain NASM
+syntax it runs the stock (non-`--masm`) path, so a clean pass proves the `--masm`
+work never regressed stock NASM behaviour -- the fork is byte-for-byte stock NASM
+without the flag.
 
 Usage:
-    python acceptance.py [PROJECT_DIR] [--nasm PATH] [--masm]
+    python acceptance.py PROJECT_DIR [--nasm PATH] [--masm]
 
-PROJECT_DIR defaults to the sibling checkout; override for another machine.
+PROJECT_DIR is the downstream project root (looked up for vmm/*.asm, vxd/*.asm).
+If omitted, a sibling `../../../a downstream project` checkout is tried as a convenience.
 Exit status is non-zero if any module fails to assemble.
 """
 import os

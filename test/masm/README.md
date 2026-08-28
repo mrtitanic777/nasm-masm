@@ -11,19 +11,21 @@ python run.py --objects          # also check -f obj (OMF) and -f win32 (COFF)
 python run.py --update           # regenerate golden/*.hex after an intended change
 python run.py --nasm ../../nasm  # pick the nasm binary (default: ../../nasm[.exe])
 
-python run.py --corpus DIR       # validate an external byte-exact corpus
-python acceptance.py [PROJECT]   # downstream drop-in check (see below)
+python run.py --corpus DIR       # optional: validate your own MASM corpus (see below)
+python acceptance.py PROJECT_DIR # optional: drop-in check for a downstream build
 ```
 
 `run.py` assembles each `fixtures/*.asm` with `nasm --masm -f bin` and compares
-the emitted bytes to `golden/<name>.hex`.
+the emitted bytes to `golden/<name>.hex`. The fixtures and their golden bytes
+ship with the repo, so this suite is fully self-contained — no external files
+needed.
 
-`acceptance.py` points a real downstream build -- a downstream project's Ring-0 layer
-(`vmm/*.asm`, `vxd/*.asm`, assembled with `nasm -f elf32`) -- at this fork's
-`nasm` and confirms every module still assembles. The asm is NASM-syntax, so it
-runs the stock (non-`--masm`) path: the check proves the fork is a transparent,
-drop-in replacement for the assembler the OS build already depends on. The
-a downstream project Makefile takes it directly via `make ASMC=/path/to/nasm-masm/nasm`.
+`acceptance.py` is an optional helper: point it at a directory of NASM-syntax
+`.asm` files (`vmm/*.asm`, `vxd/*.asm`) from a project that already builds with
+NASM, and it confirms every module still assembles with this binary. Because
+that source is plain NASM syntax it runs the stock (non-`--masm`) path, so the
+check proves this fork is a transparent, drop-in replacement for upstream NASM.
+A Makefile-driven build can use it directly via `make ASMC=/path/to/nasm`.
 
 With `--objects`, each MASM-segment fixture (`directives`, `objseg`) plus the
 relocation-free `hll_struct` is also assembled to `-f obj` (OMF) and `-f win32`
@@ -84,43 +86,39 @@ real ML 6.11:
 Each `.asm` header explains the behaviour and annotates the expected bytes
 inline; `golden/*.hex` is the authoritative comparison.
 
-## Validating against a real disassembly corpus
+## Optional: validate against your own corpus (`--corpus`)
 
-The fork was developed against a byte-exact Windows 95 VxD disassembly corpus
-whose lines carry their original bytes in `; offset bytes` comments. That corpus
-is **not** part of this repository (it is a derivative of third-party binaries).
-Point the harness at a local copy to reassemble every fragment and diff against
-its inline ground truth:
-
-```sh
-python run.py --corpus /path/to/win95/src/asm/core
-```
-
-Reported: fragments, assemble errors, byte-exact count, and total byte match.
-As of the current tree: **539/539 fragments, 100.00% byte-exact.**
-
-## Differential oracle vs real ML.EXE
-
-For the authoring dialect (Track B) there is no byte ground truth, so
-`ml_oracle.py` drives a real Microsoft `ML.EXE` and diffs its object code
-against `nasm --masm`, per file. ML 6.11c/6.13/6.14 are Win32 and run natively
-(no DOSBox):
+Beyond the shipped fixtures, `run.py --corpus DIR` can reassemble a whole
+directory of MASM `.asm` files that carry their expected machine code inline as
+`; offset bytes` comments (the format produced by a disassembler that round-trips
+to source), and diff every fragment against that inline ground truth:
 
 ```sh
-python ml_oracle.py --ml /path/to/masm611c/ML.EXE fixtures/objseg.asm
-python ml_oracle.py --ml /path/to/ML.EXE --corpus /path/to/win95/src/asm/core
+python run.py --corpus /path/to/your/corpus
 ```
 
-Documented findings from wiring this up:
-- On the Win95 VxD corpus, **`nasm --masm` matches the shipped bytes more
-  faithfully than real ML does** — ML 6.0 and 6.11c both diverge on a few SIB
-  base/index orderings of two-register addressing (they encode `[eax+esi]` with
-  base=esi; the shipped code, and nasm, use base=eax). Functionally identical;
-  the corpus ground truth is authoritative.
-- **`nasm --masm` is deliberately more lenient than ML** on the machine-
-  generated corpus dialect — e.g. real ML rejects `stosd dword ptr es:[edi],eax`
-  ("too many operands"), which nasm accepts so it can assemble the disassembly
-  corpus that ML itself cannot.
+It reports fragment count, assemble errors, byte-exact count, and total byte
+match. Supply your own corpus — none is bundled (a real one is typically derived
+from third-party binaries and can't be redistributed).
+
+## Optional: differential check against real `ML.EXE` (`ml_oracle.py`)
+
+If you have a copy of Microsoft's assembler, `ml_oracle.py` runs it and diffs its
+object code against `nasm --masm` file-by-file (ML 6.11c/6.13/6.14 are Win32 and
+run natively):
+
+```sh
+python ml_oracle.py --ml /path/to/ML.EXE fixtures/objseg.asm
+```
+
+Two general findings worth knowing when comparing against ML:
+- On two-register addressing, ML and `nasm --masm` sometimes pick different SIB
+  base/index orderings (`[eax+esi]` as base=esi vs base=eax). These are
+  functionally identical encodings — an "encoding-choice tie", not a bug.
+- `nasm --masm` is deliberately a little **more lenient** than ML on some
+  machine-generated forms (e.g. it accepts `stosd dword ptr es:[edi], eax`, which
+  ML rejects as "too many operands"), so it can assemble disassembler output that
+  ML itself would refuse.
 
 ## Adding a fixture
 

@@ -18,49 +18,121 @@ With best regards, the NASM crew.
 
 ---
 
-## This fork: `--masm` — MASM source compatibility
+## `--masm` — assemble MASM source with NASM
 
-This is a fork of NASM that adds a **`--masm`** mode: NASM assembles
-Microsoft-MASM–dialect source directly, so vintage and modern MASM code can be
-built with an open, cross-platform assembler instead of `ML.EXE`. Every
-`--masm` behaviour is gated on the flag — **without `--masm`, this binary is
-stock NASM, byte-for-byte.**
+This is a fork of NASM with **one added feature**: a `--masm` flag that makes
+NASM understand **Microsoft Macro Assembler (MASM) syntax**. It lets you build
+`.asm` files written for Microsoft's `ML.EXE` with a free, open-source,
+cross-platform assembler instead — on Linux, macOS, or Windows.
 
-**MASM compatibility.** The target dialect and encoding are Microsoft Macro
-Assembler **6.11** (`ML.EXE` **6.11c** is the primary byte-parity oracle);
-**6.14** and **6.0** are used as secondary oracles. Coverage spans from the
-16-bit segmented / `cmacros.inc` style of the **MASM 5.x–6.0** era (the Win3.1
-KERNEL/driver source) through the **6.1x** 32-bit authoring dialect
-(`.MODEL flat`, `PROC`/`INVOKE`, `.IF`/`.WHILE`, …). Fidelity is *functional
-MASM syntax* proven by byte-parity on a real corpus (below), not byte-parity on
-encoding-choice ties.
+**Without `--masm`, this is ordinary NASM**, byte-for-byte. The flag is the only
+difference, and it does nothing unless you pass it.
 
-**What it does**
+### Quick start
 
-- **Instruction encoding parity.** Under `--masm`, NASM matches `ML.EXE`'s
-  encoding choices (reg,reg direction, accumulator-immediate forms, jump
-  sizing, redundant-prefix elision, …). Validated **byte-exact on a
-  539-fragment Win95 VxD disassembly corpus** (100%).
-- **Full MASM directive & dialect coverage.** Segments (`SEGMENT`/`ENDS` with
-  `USE16`/`USE32` and nesting), groups, simplified segments (`.MODEL`/`.CODE`),
-  `PROC`/`ENDP`/`INVOKE`/`PROTO`/`LOCAL`/`USES`, `STRUCT`/`UNION`/`RECORD`/
-  `TYPEDEF`, `.IF`/`.WHILE`/`.REPEAT`, `MACRO`/`REPT`/`FOR`/`IRP`, the full
-  conditional-assembly and string-function families, `OFFSET`/`SIZE`/`TYPE`/
-  `PTR` and the MASM word operators, `EQU` text/numeric/size-cast aliases, and
-  the Win16 `cmacros.inc` procedure/segment model. The authoring-dialect
-  constructs are byte-validated against `ML.EXE`.
-- **Real-world source.** Assembles real Microsoft DDK/SDK headers
-  (`windows.inc`) and Win3.1 `cmacros`-based driver/kernel source.
+Build it exactly like upstream NASM. From a git checkout:
 
-**Validation.** `test/masm/` holds a golden-byte regression suite (85+ clean,
-hand-written fixtures, each pinned to this fork's verified MASM-parity output)
-plus the corpus checker. Run `python test/masm/run.py`. See
-[`test/masm/README.md`](test/masm/README.md) and the roadmap
-[`docs/MASM-COMPAT-ROADMAP.md`](docs/MASM-COMPAT-ROADMAP.md).
+```sh
+sh autogen.sh      # generate the configure script (first time only)
+./configure
+make               # produces the `nasm` binary
+```
 
-**Scope & limits.** Fidelity is *functional MASM syntax* validated by corpus
-byte-parity, not byte-parity on encoding-choice ties (documented in the
-roadmap). Object-*record* byte-parity against `ML.EXE` (as opposed to code-byte
-parity, which holds) is a separate goal. Assembling a full driver/kernel tree
-additionally needs that tree's own `cmacros`/header environment; the assembler
-itself is complete for the validated scope above.
+(On Windows, build under MSYS2/MinGW, or use the project files in `Mkfiles/` —
+same as stock NASM.)
+
+Then assemble a MASM source file by adding `--masm` and choosing an output
+format with `-f`:
+
+```sh
+nasm --masm -f win32 hello.asm -o hello.obj    # 32-bit COFF object
+nasm --masm -f obj   hello.asm -o hello.obj    # 16-bit OMF object
+nasm --masm -f elf32 hello.asm -o hello.o      # 32-bit ELF (Linux)
+nasm --masm -f bin   hello.asm -o hello.bin    # flat binary, no object headers
+```
+
+NASM only *assembles* — link the resulting object with whatever linker you
+already use (`link.exe`, `ld`, `gcc`, …).
+
+A minimal example (`add.asm`):
+
+```asm
+        .386
+        .model flat
+        .code
+add_two proc
+        mov     eax, ecx
+        add     eax, edx
+        ret
+add_two endp
+        end
+```
+
+```sh
+nasm --masm -f win32 add.asm -o add.obj
+```
+
+### Important: bring the project's own includes
+
+`--masm` understands the MASM *language and encoding*. Assembling a real-world
+codebase still needs **that project's own include files** — its `cmacros.inc`,
+`windows.inc`, and any other headers it `include`s — present on disk, exactly as
+`ML.EXE` would require. This tool understands the syntax; it does not ship
+anyone else's source. Point NASM at your include directories with `-I`:
+
+```sh
+nasm --masm -I ./inc -f obj driver.asm -o driver.obj
+```
+
+### What MASM syntax is supported
+
+- **Segments & model:** `NAME SEGMENT`/`ENDS` (with `USE16`/`USE32` and nesting),
+  `GROUP`, `ASSUME`, and the simplified `.MODEL` / `.CODE` / `.DATA` directives.
+- **Procedures:** `PROC`/`ENDP`/`RET`, `INVOKE`, `PROTO`, `LOCAL`, `USES`.
+- **Data types:** `STRUCT`/`UNION`/`RECORD`/`TYPEDEF` and typed data labels
+  (a bare data label reads as its contents, as in MASM).
+- **Control flow:** `.IF`/`.ELSE`/`.ELSEIF`/`.ENDIF`, `.WHILE`, `.REPEAT`.
+- **Metaprogramming:** `MACRO`/`ENDM`, `REPT`, `FOR`/`IRP`, the full
+  `IF`/`IFDEF`/`IFB`/`IFIDN`/… conditional-assembly family, and the string
+  functions (`CATSTR`, `SUBSTR`, `INSTR`, `SIZESTR`).
+- **Operators:** `OFFSET`, `SIZE`/`SIZEOF`, `TYPE`, `PTR`, `LOW`/`HIGH`, the MASM
+  word operators (`EQ`/`NE`/`LT`/`SHL`/`AND`/…), and `EQU` text/numeric aliases.
+- **Win16 `cmacros.inc`** procedure/segment conventions (`cProc`/`cBegin`/
+  `cCall`/`sBegin`/`createSeg`/…).
+
+It also reproduces **MASM's instruction encoding**, which differs from NASM's
+defaults in a few places (e.g. `xor eax, eax` assembles to `33 c0` as MASM does,
+not NASM's `31 c0`), so the emitted code bytes match what `ML.EXE` produces.
+
+### Compatibility target
+
+The reference dialect is **MASM 6.11** (behaviour is also checked against MASM
+6.0 and 6.14). Coverage runs from the older 16-bit segmented / `cmacros` style
+of the early-1990s Microsoft toolchain through the 32-bit `.MODEL flat` /
+`PROC` / `.IF` authoring dialect.
+
+Correctness is established by assembling **real Microsoft-generated assembly and
+comparing the emitted bytes to what `ML.EXE` produces** (hundreds of code
+fragments, byte-for-byte), plus the self-contained regression suite below.
+
+### Limitations
+
+- Fidelity is *functional* MASM compatibility — a byte-for-byte match on real
+  code, not a bit-perfect match in the cases where MASM and NASM each make an
+  equally valid but different encoding choice.
+- Object *file-record* layout parity (beyond the code bytes, which do match) is
+  not a goal.
+- A few rarely-used constructs are not implemented; see
+  [`docs/MASM-COMPAT-ROADMAP.md`](docs/MASM-COMPAT-ROADMAP.md).
+
+### Tests
+
+`test/masm/` holds a self-contained regression suite of small, hand-written MASM
+fixtures whose expected output bytes ship with the repo:
+
+```sh
+python test/masm/run.py            # assemble every fixture, compare to golden bytes
+python test/masm/run.py --objects  # also check the OMF and COFF object backends
+```
+
+See [`test/masm/README.md`](test/masm/README.md) for details.
