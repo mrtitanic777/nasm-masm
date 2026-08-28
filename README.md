@@ -26,6 +26,15 @@ built with an open, cross-platform assembler instead of `ML.EXE`. Every
 `--masm` behaviour is gated on the flag — **without `--masm`, this binary is
 stock NASM, byte-for-byte.**
 
+**MASM compatibility.** The target dialect and encoding are Microsoft Macro
+Assembler **6.11** (`ML.EXE` **6.11c** is the primary byte-parity oracle);
+**6.14** and **6.0** are used as secondary oracles. Coverage spans from the
+16-bit segmented / `cmacros.inc` style of the **MASM 5.x–6.0** era (the Win3.1
+KERNEL/driver source) through the **6.1x** 32-bit authoring dialect
+(`.MODEL flat`, `PROC`/`INVOKE`, `.IF`/`.WHILE`, …). Fidelity is *functional
+MASM syntax* proven by byte-parity on a real corpus (below), not byte-parity on
+encoding-choice ties.
+
 **What it does**
 
 - **Instruction encoding parity.** Under `--masm`, NASM matches `ML.EXE`'s
