@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_movzx_size.asm -- MOVZX/MOVSX need an explicit source size that NASM
 ; cannot infer from a MASM memory operand.  MASM takes it from the source's
 ; declared TYPE: a struct field's DB/DW, a typed data label, or a cmacros

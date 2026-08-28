@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_segment_resume.asm -- MASM SEGMENT/ENDS nest: `NAME ENDS' resumes the
 ; segment that was open before the matching `NAME SEGMENT'.  A data table
 ; emitted into another segment mid-stream (as the fault-trap macros do) must not

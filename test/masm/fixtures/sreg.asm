@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; sreg.asm -- redundant operand-size prefix on segment-register memory moves.
 ; A segment register is 16-bit, so ML prefixes a sreg<->memory move in 32-bit
 ; code with 66; NASM drops the redundant prefix (8c/8e are inherently 16-bit)

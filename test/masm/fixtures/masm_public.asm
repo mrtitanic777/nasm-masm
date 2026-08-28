@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_public.asm -- PUBLIC / ASSUME directives (front-end).
 ; `PUBLIC name[,name...]' -> NASM `global' (a `:type' qualifier is dropped);
 ; `ASSUME seg:val,...' carries no encoding in flat/obj output -> dropped.

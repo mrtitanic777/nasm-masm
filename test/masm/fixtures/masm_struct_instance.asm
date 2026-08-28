@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_struct_instance.asm -- a BARE struct instance `STRUCTTYPE <inits>' whose
 ; name comes from a preceding `labelB <..>' / `name label type' (kdata pairs
 ; `labelB <PUBLIC,bootExecBlock>' with `EXECBLOCK <0,0,0,0>').  The front-end

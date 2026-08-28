@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_local.asm -- B5 tail: PROC USES + LOCAL.
 ; USES saves/restores registers around the body; LOCAL reserves [ebp-N] stack
 ; slots (add esp,-total). Validated byte-identical to ML for each separately.

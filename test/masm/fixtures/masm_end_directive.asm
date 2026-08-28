@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_end_directive.asm -- MASM `END [entrypoint]' terminates the module.
 ; Anything after END is not assembled (real MASM drops it); reconstructed
 ; sources sometimes leave commentary or C pseudo-code past END.  ENDM/ENDP/

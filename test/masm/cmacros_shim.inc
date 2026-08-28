@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ;; cmacros_shim.inc -- a NASM-native reimplementation of the core Win16 cmacros
 ;; procedure & segment macros, for `nasm --masm'.  It provides cProc/parmX/localX
 ;; /cBegin/cEnd/sBegin/sEnd with the same call interface as Microsoft's

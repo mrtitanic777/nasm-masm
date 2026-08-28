@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_bracket_alias.asm -- MASM param/local bound to a memory operand [bp-o]
 ; may ALSO be bracketed at the use site (`mov bx,[wLen]'), expanding to the
 ; redundant `[[bp-o]]'.  The parser collapses the inner bracket under --masm,

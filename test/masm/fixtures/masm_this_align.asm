@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_this_align.asm -- two related location-counter features (ldboot's
 ; paragraph alignment needs both):
 ;  * MASM `THIS <type>' = the current address -> `$' (`here equ this byte').

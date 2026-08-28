@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /* Copyright 1996-2024 The NASM Authors - All Rights Reserved */
+/* --masm MASM-compatibility mode Copyright 2026 Logan Greer */
 
 /*
  * eval.c    expression evaluator for the Netwide Assembler

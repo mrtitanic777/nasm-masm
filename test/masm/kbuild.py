@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Written by: Logan Greer
 """Build an external MASM module tree with `nasm --masm', under the tree's own
 build configuration.
 

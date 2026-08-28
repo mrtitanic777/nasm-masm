@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; accum.asm -- 16-bit accumulator-immediate preference.
 ; For a 16-bit `<alu> AX, imm' ML uses the accumulator opcode with a 16-bit
 ; immediate (AND AX,imm -> 25 iw, CMP -> 3d, OR -> 0d ...), which ties the

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Written by: Logan Greer
 """
 Optional acceptance check: confirm this fork's `nasm` is a drop-in replacement.
 

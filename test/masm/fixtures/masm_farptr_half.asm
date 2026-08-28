@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_farptr_half.asm -- cmacros far-pointer half accessors on a struct member.
 ; A DWORD (far pointer) member has `.off'/`.lo' (low word, +0) and
 ; `.sel'/`.seg'/`.hi' (high word, +2) sub-accessors.  On a `[reg].member.half'

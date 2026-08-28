@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_expr.asm -- B9: expression operators (TYPE, SIZEOF, LOW/HIGH, radix).
 ; The C front-end rewrites the MASM prefix operators into NASM expressions;
 ; primitive *_size come from the package, STRUCT_size from NASM's `struc'.

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_farptr_member.asm -- var.field member access on a far-pointer variable.
 ; A DWORD/far-pointer variable reinterpreted through a struct's fields:
 ; `myPtr.sel' -> `[myPtr + sel]' (sel = SEGOFF.sel offset 2), the high word.

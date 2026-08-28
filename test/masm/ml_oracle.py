@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Written by: Logan Greer
 """Differential oracle: compare `nasm --masm` against real Microsoft ML.EXE.
 
 The corpus carries its own byte ground truth, so instruction parity (Track A)

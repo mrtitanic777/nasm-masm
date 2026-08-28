@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_comment.asm -- MASM COMMENT block directive + listing no-ops.
 ; COMMENT delim ... delim is a block comment (delim = first non-space char after
 ; COMMENT); it may span lines or close on the same line. Listing/cross-reference

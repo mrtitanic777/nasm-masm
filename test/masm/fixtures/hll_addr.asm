@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_addr.asm -- B5 tail: INVOKE ... ADDR of a global vs a local.
 ; ADDR is marked so INVOKE distinguishes a label (push its offset, like ML) from
 ; a stack local (lea its [ebp-N] address, then push). Validated byte-identical

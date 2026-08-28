@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /* Copyright 1996-2025 The NASM Authors - All Rights Reserved */
+/* --masm MASM-compatibility mode Copyright 2026 Logan Greer */
 
 /*
  * nasm.h   main header file for the Netwide Assembler: inter-module interface

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_anon_cond.asm -- MASM @F/@B skip a @@: that a conditional excludes.  The
 ; anonymous-label counter must NOT advance for a @@: in a dead IF branch, or a
 ; live @F would point at a label that is never emitted.

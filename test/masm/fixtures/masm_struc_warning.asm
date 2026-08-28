@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_struc_warning.asm -- a MASM constant whose name collides with a NASM
 ; directive keyword (`WARNING = 0', as in windows.inc) must not break STRUCT.
 ; Under --masm case-insensitive matching, `warning' would otherwise shadow the

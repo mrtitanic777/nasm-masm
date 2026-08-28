@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_wordops.asm -- MASM word operators in IF/= expressions.
 ; EQ NE LT GT LE GE -> == != < > <= >= ; MOD SHL SHR -> % << >> ;
 ; AND OR XOR NOT -> & | ^ ~ (whole-word, in expression context only).

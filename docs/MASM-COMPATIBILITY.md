@@ -1,3 +1,4 @@
+<!-- Written by: Logan Greer -->
 # MASM compatibility reference
 
 This fork adds a `--masm` flag that makes NASM assemble Microsoft Macro

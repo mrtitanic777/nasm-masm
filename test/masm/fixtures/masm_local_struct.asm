@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_local_struct.asm -- a cmacros `localV name,size' stack BUFFER local is a
 ; struct instance; `name.member' must address the field on the stack frame.
 ; The front-end records localV names (masm_lbufs) so var.field rewrites them

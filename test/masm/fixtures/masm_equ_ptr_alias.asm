@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_equ_ptr_alias.asm -- a MASM text equate that aliases a bare size-cast
 ; keyword (`wptr EQU word ptr'), used to abbreviate casts at the use site.
 ; The RHS is not numeric, so it binds as a text alias, not a numeric equate.

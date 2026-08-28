@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_seg_size.asm -- MASM writes a segment override BEFORE the size cast
 ; (`es:byte ptr [bx]'), but NASM wants the size first (`byte es:[bx]').  The
 ; front-end reorders `<seg>:<size> ptr' to `<size> ptr <seg>:'.

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_space_args.asm -- MASM accepts a SPACE (or tab) as a macro-argument
 ; separator, so a cmacros data declaration may be written `globalW name 0'
 ; instead of `globalW name, 0'.  NASM splits macro args only on commas, so the

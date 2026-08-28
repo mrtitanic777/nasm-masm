@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_equ_memalias.asm -- EQU aliasing a MEMORY operand with member access.
 ; cmacros frame accessors spell locals as `NAME EQU [ptr].struct.field'
 ; (e.g. `wParam EQU [pFrame].wp_wParam').  NASM's `equ' rejects a memory

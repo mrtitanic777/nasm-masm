@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; ptrseg.asm -- `ptr' size operator and segment overrides.
 ; MASM's `<size> ptr [mem]' and `seg:[mem]' forms. `ptr' is a no-op noise word
 ; after the size; a segment override written outside the brackets folds into

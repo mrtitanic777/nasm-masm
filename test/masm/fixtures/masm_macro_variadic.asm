@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_macro_variadic.asm -- a MASM caller may pass a `<...>' list argument,
 ; which NASM splits on its inner commas into several arguments.  Front-end-
 ; translated MASM macros are declared VARIADIC (0-*) so the extra pieces are

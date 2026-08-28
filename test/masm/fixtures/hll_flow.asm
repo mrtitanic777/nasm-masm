@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_flow.asm -- B6: high-level control flow.
 ; .IF/.ELSE/.ENDIF, .WHILE/.ENDW, .REPEAT/.UNTIL, .BREAK nested in .IF.
 ; Conditions lower to CMP + unsigned jcc. With -Ox the jumps are short and

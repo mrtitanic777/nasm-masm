@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; jumps.asm -- branch/immediate sizing (the -O1 default under --masm).
 ; ML optimizes immediate size (imm8 sign-extension) but does NOT shrink a
 ; forward branch to short: a bare forward `je'/`jmp' stays near (0f 8x / e9),

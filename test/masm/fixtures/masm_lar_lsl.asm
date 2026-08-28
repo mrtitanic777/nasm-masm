@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_lar_lsl.asm -- LAR/LSL read a selector from r/m16; the operand size
 ; follows the destination register, not the selector variable's storage width.
 ; MASM writes a spurious `dword ptr' size cast on the source; NASM rejects a

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_macro.asm -- B7: MACRO/ENDM, REPT, TEXTEQU, = .
 ; A MACRO with named params, a REPT block, a text equate and a numeric equate.
 ; Validated byte-identical to ML.

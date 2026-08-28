@@ -1,3 +1,4 @@
+<!-- Written by: Logan Greer -->
 # MASM-mode regression tests
 
 Locks in the byte-level behaviour of `nasm --masm` (the MASM 6.x

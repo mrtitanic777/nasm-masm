@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_macroparam.asm -- MASM macro parameter semantics: a parameter used as the
 ; target of `name = value' sets the PASSED symbol (textual substitution), which
 ; the cmacros.inc `outif' idiom relies on. Params are substituted as %1..%N

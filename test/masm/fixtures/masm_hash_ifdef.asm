@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_hash_ifdef.asm -- some MASM sources (and the Win3.1 KERNEL reconstruction)
 ; write the conditional-assembly IF-family with a C-preprocessor `#' prefix
 ; (`#ifdef WOW' ... `#endif').  NASM reads a leading `#' as a line-number

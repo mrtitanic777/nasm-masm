@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_data_offset.asm -- OFFSET in a DATA initializer (`dw OFFSET label') is a
 ; no-op: a bare label is already its address.  The regular operand parser
 ; handles `mov ax,OFFSET foo', but the data (dw/dd) parser did not, so a

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_type_member.asm -- MASM 5.x struct fields are GLOBAL offset constants,
 ; so `TYPE.member' is the member's offset regardless of TYPE -- even a member
 ; declared in a different struct (an .ERRNZ layout check often does this), both

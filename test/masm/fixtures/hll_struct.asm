@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_struct.asm -- B3: STRUCT definitions, member access, SIZEOF.
 ; A STRUCT becomes a NASM struc, so STRUCT.member offsets and STRUCT_size
 ; fall out for free. Register-based member access `[reg].STRUCT.member' ->

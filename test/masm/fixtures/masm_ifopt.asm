@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_ifopt.asm -- undefined ?-option switches default to 0 in IF/IFE.
 ; cmacros-era code tests conditional-assembly option switches (?CHKSTK1,
 ; ?RIPAUX, ...) that a given module may never set.  MASM treats an undefined

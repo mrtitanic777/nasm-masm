@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_for.asm -- B7 tail: FOR/IRP list iteration and EXITM.
 ; FOR/IRP lower to a fresh one-arg macro whose body is replayed once per list
 ; item; EXITM -> %exitmacro. Validated byte-identical to ML 6.11:

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_strfn.asm -- B7 tail: string functions SIZESTR / CATSTR / SUBSTR.
 ; Compile-time text operations that yield numeric or text equates:
 ;   SIZESTR <text>       -> length of the text (numeric)

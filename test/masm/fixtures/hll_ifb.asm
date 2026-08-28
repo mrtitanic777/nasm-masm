@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_ifb.asm -- B8 tail: IFB/IFNB, IFIDN/IFDIF text conditionals, optional
 ; macro parameters. MASM macro params are all optional (an omitted one is
 ; blank), so `%macro NAME 0-n' and IFB tests for the blank. Text comparisons

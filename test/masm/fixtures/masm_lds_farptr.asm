@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_lds_farptr.asm -- LES/LDS/etc. load a far pointer whose operand size
 ; follows the destination register, not the pointer variable's dword width.
 ; A bare data label means its contents ([var]); for a `dd' far pointer that

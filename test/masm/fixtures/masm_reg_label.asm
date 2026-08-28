@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_reg_label.asm -- MASM code freely uses names that NASM reserves as
 ; registers as ordinary labels.  Two mechanisms:
 ;  * 64-bit GPR names (rax..r15) cannot be registers in 16/32-bit code, so the

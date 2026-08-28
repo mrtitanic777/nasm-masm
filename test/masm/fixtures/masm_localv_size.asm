@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_localv_size.asm -- a cmacros `localV name, size' often gives the size as
 ; a `<...>'-wrapped expression (`<SIZE EXE_HDR>', `<SIZE S + 2>') so its space
 ; does not split the macro argument.  NASM separates macro args on commas, not

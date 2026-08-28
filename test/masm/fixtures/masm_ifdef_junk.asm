@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_ifdef_junk.asm -- MASM IFDEF/IFNDEF reads a single symbol; trailing text
 ; on the line is ignored.  A reconstructed source sometimes forgets the `;'
 ; before a comment (`ifndef WOW - We thunk this API, too slow'), which must not

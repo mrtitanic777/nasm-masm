@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_adjbracket.asm -- MASM adjacent-bracket addressing [a][b] = [a+b].
 ; MASM lets bracket groups concatenate as addition: `[bp][2]' is `[bp+2]',
 ; `[bx][si]' is `[bx+si]'.  Pervasive in the real Win3.1 kernel stack-frame

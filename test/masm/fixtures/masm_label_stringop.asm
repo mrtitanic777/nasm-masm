@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_label_stringop.asm -- a label prefixing a bare MASM string instruction
 ; (`foint: lods byte ptr es:[si]').  The string-op rewrite keys on the first
 ; word (here the label), so the front-end splits the label off, sizes the

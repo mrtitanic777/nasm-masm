@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_instr.asm -- B7 tail: INSTR (substring search position).
 ; NAME INSTR [start,] <s1>, <s2> -> 1-based position of s2 in s1 (from start,
 ; default 1), 0 if absent. Literal <...> args are searched at assembly time.

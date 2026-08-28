@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_dup_count.asm -- a struct member `<dir> N DUP (?)' where N is a non-literal
 ; expression (an EQU/= constant or a SIZE operator) must reserve N elements, so
 ; the struct SIZE comes out right.  Both named and anonymous (padding) members.

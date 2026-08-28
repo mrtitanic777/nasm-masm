@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_caseinsens.asm -- MASM is case-insensitive; NASM is not.
 ; Under --masm a symbol resolves regardless of case, across every symbol kind:
 ; data labels (contents), code labels, jump targets, `=' numerics, EQU

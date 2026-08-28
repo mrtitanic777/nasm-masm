@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_typedef.asm -- B3 tail: TYPEDEF type aliases.
 ; TYPEDEF makes a name usable as a data directive and gives it a size:
 ;   TYPEDEF <primitive>   -> that directive + size

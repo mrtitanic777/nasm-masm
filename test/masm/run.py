@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Written by: Logan Greer
 """MASM-mode regression harness for the nasm-masm fork.
 
 Assembles each fixture under fixtures/ with `nasm --masm -f bin' and compares

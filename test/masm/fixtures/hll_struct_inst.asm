@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_struct_inst.asm -- B3 tail: static struct instances + instance-member access.
 ; `label STRUCTTYPE <i0,i1,...>' emits a labelled data block (one field per
 ; member, in declaration order); a bare `label.member' then means its contents,

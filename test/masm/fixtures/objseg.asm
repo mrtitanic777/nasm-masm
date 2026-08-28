@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; objseg.asm -- a MASM-segment-wrapped body for the object-backend check.
 ; The `NAME segment ... use32 ...' scaffolding must produce a 32-bit code
 ; segment in -f obj (OMF) and -f win32 (COFF), not only in -f bin. This mixes

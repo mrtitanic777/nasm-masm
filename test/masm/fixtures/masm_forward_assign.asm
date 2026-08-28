@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_forward_assign.asm -- a MASM `=' is a redefinable numeric equate that
 ; becomes a NASM `%assign' (evaluated at preprocess time), so it cannot name a
 ; symbol defined LATER.  Real headers do exactly that (winkern.inc's

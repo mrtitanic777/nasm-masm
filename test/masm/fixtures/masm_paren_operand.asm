@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_paren_operand.asm -- MASM uses `(...)' as grouping, so an operand may
 ; wrap a lone identifier in parentheses (`word ptr (mflags)', where mflags is a
 ; memory alias).  NASM rejects `(mem)', and the parens carry no meaning around a

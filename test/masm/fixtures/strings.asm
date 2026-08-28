@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; strings.asm -- MASM documentation operands on string instructions.
 ; ML writes the string ops with explicit operands that document the implied
 ; registers/segments; NASM's mnemonics take none. Under --masm the operands are

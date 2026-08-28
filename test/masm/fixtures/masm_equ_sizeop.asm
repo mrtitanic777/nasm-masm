@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_equ_sizeop.asm -- SIZE/SIZEOF operator inside an EQU expression.
 ; `DSC_LEN EQU (SIZE DscPtr)' -- the EQU right-hand side gets the same operator
 ; rewriting an instruction operand does, so `SIZE t' becomes `t_size'.  Real

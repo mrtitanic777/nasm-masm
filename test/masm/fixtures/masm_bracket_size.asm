@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_bracket_size.asm -- a SIZE/SIZEOF/TYPE operator after a `].' member dot:
 ; `lea si,[si].SIZE T' means `[si + sizeof(T)]'.  The front-end resolves the
 ; operator to the struct's `_size' the same way a bare `SIZE T' does.

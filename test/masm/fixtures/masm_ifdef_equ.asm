@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_ifdef_equ.asm -- MASM IFDEF is true for ANY defined symbol, including a
 ; numeric EQU/= constant.  NASM's %ifdef sees only preprocessor macros, so the
 ; front-end must decide IFDEF/IFNDEF on an EQU/= constant directly.

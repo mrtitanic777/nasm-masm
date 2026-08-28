@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_record.asm -- B3 tail: RECORD (bit-packed fields).
 ; `NAME RECORD f:w, ...' packs fields most-significant-first into one integer
 ; (byte/word/dword by total width). Each field name is its shift count; MASK f

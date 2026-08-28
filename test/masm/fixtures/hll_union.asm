@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_union.asm -- B3 tail: UNION types (members overlap at offset 0).
 ; A UNION lowers to per-member offset defines (all 0) plus NAME_size = the
 ; largest member; member access and SIZEOF then work like a struct.

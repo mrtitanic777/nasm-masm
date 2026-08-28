@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; directives.asm -- the machine-generated directive scaffolding.
 ; Exercises the masm package end to end: listing directives (title/page) and
 ; ASSUME are dropped, `.386' and the USE32 segment attribute set 32-bit code,

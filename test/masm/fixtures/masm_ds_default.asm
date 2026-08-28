@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_ds_default.asm -- MASM (like every mainstream x86 assembler but NASM)
 ; drops a segment-override prefix that names the operand's DEFAULT segment.
 ; DS is the default for any base but BP/SP/EBP/ESP, so an explicit `ds:' there

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; rawbits.asm -- a raw `bits 32' (rather than .386/.MODEL) must still set the
 ; struc-safe __?MASM_BITS?__ shadow, so a following `segment' takes USE32 under
 ; the object backends (not the stale 16-bit default). Regression for the gap

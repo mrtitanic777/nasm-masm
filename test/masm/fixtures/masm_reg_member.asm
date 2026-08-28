@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_reg_member.asm -- MASM uses `.' for struct-member access on a BASE
 ; REGISTER too: `[di.CacheExe]' means `[di + CacheExe]' (the field's offset),
 ; and a bare numeric `.' displacement `[bp.6]' means `[bp + 6]'.  NASM has no

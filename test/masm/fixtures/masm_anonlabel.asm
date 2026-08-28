@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_anonlabel.asm -- MASM anonymous labels @@: / @F / @B.
 ; `@@:' defines an anonymous label; `@F' jumps to the NEXT one forward, `@B'
 ; to the nearest one backward.  Translated to counter-generated labels, which

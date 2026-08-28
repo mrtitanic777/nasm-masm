@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; sib.asm -- [reg*2] addressing form.
 ; NASM folds [reg*2] (scale 2, no base) into [reg+reg] to drop the disp32; ML
 ; keeps the index*2+disp32 SIB form. A summed [reg+reg] still folds in both

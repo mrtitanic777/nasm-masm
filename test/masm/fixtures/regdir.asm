@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; regdir.asm -- reg,reg direction preference.
 ; ML encodes a two-register ALU/MOV in the `reg, r/m' (d=1) form: the first
 ; operand goes in the ModRM.reg field. NASM's default is the `r/m, reg' form.

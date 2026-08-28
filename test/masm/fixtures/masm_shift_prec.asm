@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_shift_prec.asm -- MASM SHL/SHR precedence (above +/-, unlike NASM <<).
 ; MASM `a shl b + c' is `(a shl b) + c'; NASM `a << b + c' would be `a<<(b+c)'.
 ; The front-end emits `a * (1 << b)' / `a / (1 << b)' -- `*'/`/' have MASM's

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_ccall_far.asm -- cCall target/argument-syntax variants the front-end
 ; normalises for the shim's cCall:
 ;  1. a `<... ptr NAME>' pointer TARGET: strip `<>' and `ptr', keep far/near,

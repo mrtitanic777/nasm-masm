@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_org.asm -- MASM `ORG N' sets the SEGMENT-relative location counter to N
 ; (laying data/code at fixed offsets).  NASM's own `org' sets the absolute load
 ; base and is -f bin only, so it fails for the object backends.  The front-end

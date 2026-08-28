@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_if_undef.asm -- MASM evaluates an undefined symbol in a conditional-
 ; assembly IF expression as 0 (a build flag never -D'd or EQU'd).  NASM would
 ; error "symbol not defined"; under --masm the IF is taken as false and skipped.

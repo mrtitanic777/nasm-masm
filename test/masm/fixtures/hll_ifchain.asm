@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_ifchain.asm -- B6 tail: .ELSEIF chains, flag conditions, signed compares.
 ; Validated byte-identical to ML 6.11 (with ML's short jumps, i.e. -Ox):
 ;   .IF/.ELSEIF/.ELSE      each arm: cmp; jbe skip; body; jmp done  (unsigned >)

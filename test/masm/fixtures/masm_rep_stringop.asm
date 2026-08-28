@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_rep_stringop.asm -- MASM writes string ops with an explicit (documentary)
 ; sized operand: `rep stos dword ptr es:[edi]'.  NASM has only the b/w/d/q-
 ; suffixed mnemonics, so the front-end picks the suffix from the size keyword,

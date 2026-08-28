@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_cond.asm -- B8: conditional assembly.
 ; MASM IF/IFE/IFDEF/IFNDEF/ELSE/ELSEIF/ENDIF -> NASM %if-family. Validated
 ; byte-identical to ML: DEBUG=1 selects mov eax,1; IFDEF FOO (undefined) is

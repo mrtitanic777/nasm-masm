@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_operand_parens.asm -- some MASM sources parenthesise a whole operand as a
 ; grouping habit (`mov cx, ( nCount )', `mov ax, word ptr ( lpSource + 2 )').
 ; When the operand is a memory reference (a cmacros param -> [bp+N]) NASM rejects

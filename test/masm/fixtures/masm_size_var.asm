@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_size_var.asm -- MASM `SIZE var' on a data variable is its total byte
 ; count.  For a labeled buffer/array (`name <dir> N DUP(...)') the fork emits
 ; `name_size equ $ - name', so SIZE (rewritten to name_size) yields the bytes --

@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_memfold.asm -- fold a trailing [idx] / +disp into a memory operand.
 ; MASM lets a memory operand carry a following index or displacement:
 ; `[bp-4]+2' and `[bp-4][2]' both mean `[bp-4+2]'.  This matters because a

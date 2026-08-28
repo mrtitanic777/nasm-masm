@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_fwd_paste.asm -- forward-label alias through an &-paste equate.
 ; The Win3.1 kernel fault-trap tables (gpfix.inc) build a symbol by pasting a
 ; macro parameter (`tbl&count = handler') and bind it to a handler label that

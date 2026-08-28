@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_offset_expr.asm -- MASM OFFSET is a no-op prefix inside an expression (a
 ; bare label is already its offset).  It must work not only as a whole operand
 ; (`dw OFFSET lbl') but mid-expression (`dw 4 + OFFSET lbl'), as the cmacros

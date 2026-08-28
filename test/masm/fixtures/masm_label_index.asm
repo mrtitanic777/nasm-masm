@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_label_index.asm -- MASM array/pointer indexing on a data label:
 ; `tbl[2]' is `[tbl + 2]'.  Only a registered data label is rewritten (a bare
 ; `tbl' with no index still means its contents, `[tbl]', via the data-label

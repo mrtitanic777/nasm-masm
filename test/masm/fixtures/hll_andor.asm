@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; hll_andor.asm -- B6 tail: boolean && / || with short-circuit evaluation.
 ; Validated byte-identical to ML 6.11 (-Ox for ML's short jumps):
 ;   .IF a && b   each term jumps to the skip label when false:

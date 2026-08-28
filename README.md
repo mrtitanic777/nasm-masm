@@ -28,6 +28,10 @@ cross-platform assembler instead — on Linux, macOS, or Windows.
 **Without `--masm`, this is ordinary NASM**, byte-for-byte. The flag is the only
 difference, and it does nothing unless you pass it.
 
+The `--masm` MASM-compatibility mode was written by **Logan Greer**. It builds on
+NASM (BSD-2-Clause) and is © 2026 Logan Greer; upstream NASM retains its own
+copyright.
+
 ### Quick start
 
 Build it exactly like upstream NASM. From a git checkout:

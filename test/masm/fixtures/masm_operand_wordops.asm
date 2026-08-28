@@ -1,3 +1,4 @@
+; Written by: Logan Greer
 ; masm_operand_wordops.asm -- MASM word operators in INSTRUCTION OPERANDS.
 ; and/or/xor/shl/shr/not are translated to ~ & | ^ << >> when they appear as
 ; operators in an operand, but the LEADING MNEMONIC of the same spelling is
