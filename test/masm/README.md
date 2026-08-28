@@ -1,7 +1,8 @@
 # MASM-mode regression tests
 
 Locks in the byte-level behaviour of `nasm --masm` (the MASM 6.x
-source-compatibility mode). See [`../../docs/MASM-COMPAT-ROADMAP.md`](../../docs/MASM-COMPAT-ROADMAP.md).
+source-compatibility mode). For what the mode supports, see
+[`../../docs/MASM-COMPATIBILITY.md`](../../docs/MASM-COMPATIBILITY.md).
 
 ## Run
 

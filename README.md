@@ -122,8 +122,10 @@ fragments, byte-for-byte), plus the self-contained regression suite below.
   equally valid but different encoding choice.
 - Object *file-record* layout parity (beyond the code bytes, which do match) is
   not a goal.
-- A few rarely-used constructs are not implemented; see
-  [`docs/MASM-COMPAT-ROADMAP.md`](docs/MASM-COMPAT-ROADMAP.md).
+- A few rarely-used constructs are not implemented.
+
+For the full list of supported and unsupported MASM syntax, and how the mode is
+built, see [`docs/MASM-COMPATIBILITY.md`](docs/MASM-COMPATIBILITY.md).
 
 ### Tests
 
