@@ -127,11 +127,3 @@ The MASM handling is layered, from the most isolated to the deepest, and is
 | Driver | `asm/nasm.c` | The `--masm` flag and `masm_mode` global. |
 | cmacros shim | `test/masm/cmacros_shim.inc` | A NASM-native reimplementation of the Win16 `cmacros.inc` machinery, used when assembling real `cmacros`-based source. |
 
----
-
-## Development history
-
-The full build-out record — the original phased plan, decisions, and progress
-log — is kept for provenance in [`HISTORY.md`](HISTORY.md) and
-[`../test/masm/HISTORY.md`](../test/masm/HISTORY.md). Those are development
-diaries, not current reference material; this file is the reference.

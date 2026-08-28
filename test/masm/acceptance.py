@@ -14,7 +14,7 @@ Usage:
     python acceptance.py PROJECT_DIR [--nasm PATH] [--masm]
 
 PROJECT_DIR is the downstream project root (looked up for vmm/*.asm, vxd/*.asm).
-If omitted, a sibling `../../../a downstream project` checkout is tried as a convenience.
+The directory must be given; it is searched for vmm/*.asm and vxd/*.asm.
 Exit status is non-zero if any module fails to assemble.
 """
 import os
@@ -54,20 +54,20 @@ def main():
 
     nasm = find_nasm(nasm)
     if not project:
-        # default: sibling GitHub checkout
-        project = os.path.normpath(
-            os.path.join(HERE, "..", "..", "..", "a downstream project"))
+        print("acceptance: pass the downstream project directory as the first")
+        print("            argument (searched for vmm/*.asm and vxd/*.asm).")
+        return 2
 
     src = []
     for sub in ("vmm", "vxd"):
         src += sorted(glob.glob(os.path.join(project, sub, "*.asm")))
     if not src:
         print(f"acceptance: no vmm/*.asm or vxd/*.asm under {project}")
-        print("            pass the a downstream project directory as the first argument.")
+        print("            pass a project directory as the first argument.")
         return 2
 
     print(f"nasm:    {nasm}")
-    print(f"a downstream project: {project}")
+    print(f"project: {project}")
     ok = fail = 0
     for f in src:
         cmd = [nasm]
