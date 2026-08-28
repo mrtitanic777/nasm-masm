@@ -252,6 +252,16 @@ def check_objects(nasm):
         # hll_struct also guards the STRUCT-then-.code USE32 path: a regression
         # to USE16 would add 66 prefixes and fail the byte compare.
         OBJ_SAFE = {"hll_struct"}
+        # Some segment-declaring fixtures test inherently 16-bit or multi-segment
+        # behaviour that the 32-bit code-extraction check cannot mirror: a 16-bit
+        # FAR pointer needs a 16-bit relocation (COFF/win32 has none), and the
+        # SEGMENT/ENDS resume fixture splits its bytes across two physical
+        # segments, so the extracted _TEXT never equals the concatenated -f bin
+        # golden. These are -f bin tests only.
+        OBJ_SKIP = {"masm_lds_farptr", "masm_segment_resume"}
+        if name in OBJ_SKIP:
+            nskip += 1
+            continue
         if not re.search(r"(?im)^\s*\S+\s+segment\b", src) and name not in OBJ_SAFE:
             nskip += 1               # flat fixture: an -f bin test, not an object
             continue
