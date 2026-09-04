@@ -1458,21 +1458,6 @@ static bool process_arg(char *p, char *q, int pass)
                 case OPT_MASM:
                     masm_mode = true;
                     break;
-                    char *c;
-                    c = strchr(param, '=');
-
-                    if (!c) {
-                        nasm_error(ERR_NONFATAL | ERR_NOFILE | ERR_USAGE,
-                        break;
-                    }
-
-                    *c = '\0';
-                    d = nasm_malloc(sizeof(*d));
-                    d->base = nasm_strdup(param);
-                    d->dest = nasm_strdup(c + 1);
-                    *c = '=';
-                    }
-                    break;
                 case OPT_HELP:
                     /* Allow --help topic without *requiring* topic */
                     if (!param)
