@@ -198,6 +198,8 @@ static union label *find_label(const char *label, bool create, bool *created)
 {
     union label *lptr, **lpp;
     char *label_str = NULL;
+    char *lc_key = NULL;
+    const char *key;
     struct hash_insert ip;
 
     nasm_assert(label != NULL);
@@ -207,28 +209,30 @@ static union label *find_label(const char *label, bool create, bool *created)
 
     if (masm_mode) {
         /*
-         * MASM is case-insensitive: fold the label to a canonical lower case
-         * so `CurTDB' and `curTDB' are the same symbol.  The folded form is
-         * also what gets stored and emitted, so a definition and its
-         * references stay consistent for the linker.  (NASM's own special
-         * labels -- ..@, ..start, section symbols -- are already lower case,
-         * so folding is a no-op for them.)
+         * MASM matches identifiers case-insensitively, so hash on a folded
+         * lower-case copy (`CurTDB' and `curTDB' are the same symbol).  But
+         * ML preserves the *defining* spelling in the object's symbol table,
+         * so `label' is kept as written and stored in defn.label; only the
+         * hash key is folded.  (NASM's own special labels -- ..@, ..start,
+         * section symbols -- are already lower case, so folding is a no-op.)
          */
-        char *lc = nasm_strdup(label);
         char *q;
-        for (q = lc; *q; q++)
+        lc_key = nasm_strdup(label);
+        for (q = lc_key; *q; q++)
             *q = nasm_tolower(*q);
-        if (label_str)
-            nasm_free(label_str);
-        label = label_str = lc;
+        key = lc_key;
+    } else {
+        key = label;
     }
 
-    lpp = (union label **) hash_find(&ltab, label, &ip);
+    lpp = (union label **) hash_find(&ltab, key, &ip);
     lptr = lpp ? *lpp : NULL;
 
     if (lptr || !create) {
         if (created)
             *created = false;
+        if (lc_key)
+            nasm_free(lc_key);
         if (label_str)
             nasm_free(label_str);
 
@@ -249,12 +253,22 @@ static union label *find_label(const char *label, bool create, bool *created)
         *created = true;
 
     nasm_zero(*lfree);
-    lfree->defn.label     = perm_copy(label);
+    lfree->defn.label     = perm_copy(label);   /* original case, as written */
     lfree->defn.subsection = NO_SEG;
     if (label_str)
         nasm_free(label_str);
 
-    hash_add(&ip, lfree->defn.label, lfree);
+    /*
+     * In MASM mode the hash is keyed by the folded spelling (case-insensitive
+     * lookups) while defn.label keeps the original case for the symbol table;
+     * otherwise defn.label is itself the key.
+     */
+    if (lc_key) {
+        hash_add(&ip, perm_copy(lc_key), lfree);
+        nasm_free(lc_key);
+    } else {
+        hash_add(&ip, lfree->defn.label, lfree);
+    }
     return lfree++;
 }
 
